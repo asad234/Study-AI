@@ -69,7 +69,7 @@ export default function ChatPage() {
     }, 1500)
   }
 
-  const generateAIResponse = (userInput: string): string => {
+  const generateAIResponse = (_userInput: string): string => {
     const responses = [
       "That's a great question! Based on your uploaded materials, I can explain that concept in detail. Let me break it down for you step by step...",
       "I found relevant information in your study materials about this topic. Here's what you need to know...",

@@ -1,11 +1,9 @@
 "use client"
 
-import { useEffect, useState } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Users, FileText, Brain, TrendingUp, DollarSign, Activity } from "lucide-react"
-import { createClient } from "@/lib/supabase/client"
 
 interface AdminStats {
   totalUsers: number
@@ -18,49 +16,15 @@ interface AdminStats {
 }
 
 export default function AdminDashboard() {
-  const [stats, setStats] = useState<AdminStats | null>(null)
-  const [loading, setLoading] = useState(true)
-  //const supabase = createClient()
-
-  useEffect(() => {
-    fetchAdminStats()
-  }, [])
-
- /**  const fetchAdminStats = async () => {
-    try {
-      // Fetch user stats
-      const { data: users } = await supabase.from("profiles").select("id, subscription_status, created_at")
-
-      // Fetch document stats
-      const { data: documents } = await supabase.from("documents").select("id")
-
-      // Fetch flashcard stats
-      const { data: flashcards } = await supabase.from("flashcards").select("id")
-
-      // Fetch quiz stats
-      const { data: quizzes } = await supabase.from("quizzes").select("id")
-
-      const totalUsers = users?.length || 0
-      const activeUsers = users?.filter((u) => u.subscription_status === "active").length || 0
-
-      setStats({
-        totalUsers,
-        activeUsers,
-        totalDocuments: documents?.length || 0,
-        totalFlashcards: flashcards?.length || 0,
-        totalQuizzes: quizzes?.length || 0,
-        revenue: activeUsers * 9.99, // Simplified calculation
-        growthRate: 12.5, // Mock data
-      })
-    } catch (error) {
-      console.error("Error fetching admin stats:", error)
-    } finally {
-      setLoading(false)
-    }
-  }*/
-
-  if (loading) {
-    return <div className="p-6">Loading admin dashboard...</div>
+  // Mock data since the API calls are commented out
+  const stats: AdminStats = {
+    totalUsers: 1250,
+    activeUsers: 342,
+    totalDocuments: 5678,
+    totalFlashcards: 12345,
+    totalQuizzes: 789,
+    revenue: 3416.58,
+    growthRate: 12.5,
   }
 
   return (
@@ -78,8 +42,8 @@ export default function AdminDashboard() {
             <Users className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.totalUsers}</div>
-            <p className="text-xs text-muted-foreground">{stats?.activeUsers} active subscribers</p>
+            <div className="text-2xl font-bold">{stats.totalUsers}</div>
+            <p className="text-xs text-muted-foreground">{stats.activeUsers} active subscribers</p>
           </CardContent>
         </Card>
 
@@ -89,7 +53,7 @@ export default function AdminDashboard() {
             <FileText className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.totalDocuments}</div>
+            <div className="text-2xl font-bold">{stats.totalDocuments}</div>
             <p className="text-xs text-muted-foreground">Total uploaded documents</p>
           </CardContent>
         </Card>
@@ -100,7 +64,7 @@ export default function AdminDashboard() {
             <Brain className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.totalFlashcards}</div>
+            <div className="text-2xl font-bold">{stats.totalFlashcards}</div>
             <p className="text-xs text-muted-foreground">AI-generated flashcards</p>
           </CardContent>
         </Card>
@@ -111,7 +75,7 @@ export default function AdminDashboard() {
             <DollarSign className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${stats?.revenue?.toFixed(2)}</div>
+            <div className="text-2xl font-bold">${stats.revenue.toFixed(2)}</div>
             <p className="text-xs text-muted-foreground">From active subscriptions</p>
           </CardContent>
         </Card>
@@ -122,7 +86,7 @@ export default function AdminDashboard() {
             <TrendingUp className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">+{stats?.growthRate}%</div>
+            <div className="text-2xl font-bold">+{stats.growthRate}%</div>
             <p className="text-xs text-muted-foreground">Month over month</p>
           </CardContent>
         </Card>
@@ -133,7 +97,7 @@ export default function AdminDashboard() {
             <Activity className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.totalQuizzes}</div>
+            <div className="text-2xl font-bold">{stats.totalQuizzes}</div>
             <p className="text-xs text-muted-foreground">Generated quizzes</p>
           </CardContent>
         </Card>
@@ -209,7 +173,3 @@ export default function AdminDashboard() {
     </div>
   )
 }
-function fetchAdminStats() {
-  throw new Error("Function not implemented.")
-}
-

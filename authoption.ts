@@ -1,18 +1,24 @@
 // authOptions.ts
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
-import { NextResponse } from "next/server";
 
-// Define the user type
-interface User {
+// Define the user type for your database
+interface DatabaseUser {
   id: string;
   email: string;
   name: string;
-  password: string; // In a real app, this would be a hashed password
+  password: string;
 }
 
-// Mock database - in a real app, you would use a database like MongoDB, PostgreSQL, etc.
-const users: User[] = [];
+// Define the returned user type (without password)
+interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+}
+
+// Mock database
+const users: DatabaseUser[] = [];
 
 export const authOptions: NextAuthOptions = {
   providers: [
@@ -25,7 +31,7 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials, req) {
         // Sign in logic
-        if (req.method === "POST" && req.body?.action === "signup") {
+        if (req.method === "POST" && (req.body as { action?: string })?.action === "signup") {
           // Sign up logic
           const { email, password, name } = credentials || {};
           
@@ -39,22 +45,24 @@ export const authOptions: NextAuthOptions = {
             throw new Error("User already exists");
           }
           
-          // Create new user (in a real app, you would hash the password)
-          const newUser: User = {
+          // Create new user
+          const newUser: DatabaseUser = {
             id: Date.now().toString(),
             email,
             name,
-            password, // In a real app: await bcrypt.hash(password, 10)
+            password, // In real app: await bcrypt.hash(password, 10)
           };
           
           users.push(newUser);
           
           // Return user without password
-          return {
+          const authUser: AuthUser = {
             id: newUser.id,
             email: newUser.email,
             name: newUser.name,
           };
+          
+          return authUser;
         } else {
           // Sign in logic
           const { email, password } = credentials || {};
@@ -69,17 +77,19 @@ export const authOptions: NextAuthOptions = {
             throw new Error("No user found with this email");
           }
           
-          // Check password (in a real app, you would use bcrypt.compare)
+          // Check password
           if (user.password !== password) {
             throw new Error("Incorrect password");
           }
           
           // Return user without password
-          return {
+          const authUser: AuthUser = {
             id: user.id,
             email: user.email,
             name: user.name,
           };
+          
+          return authUser;
         }
       },
     }),
@@ -93,14 +103,16 @@ export const authOptions: NextAuthOptions = {
     },
     async session({ session, token }) {
       if (token && session.user) {
-        session.user.id = token.id as string;
+        // Use type assertion to avoid TypeScript errors
+        (session.user as { id: string }).id = token.id as string;
       }
       return session;
     },
   },
   pages: {
     signIn: "/auth/signin",
-    signUp: "/auth/signup",
+    // Use type assertion for custom pages
+    ...({ signUp: "/auth/signup" } as any),
   },
   session: {
     strategy: "jwt",

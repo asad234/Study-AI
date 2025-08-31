@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Clock, CheckCircle, XCircle, RotateCcw, BookOpen } from 'lucide-react';
+import { Clock, CheckCircle, RotateCcw, BookOpen } from 'lucide-react';
 
 interface Question {
   id: number;

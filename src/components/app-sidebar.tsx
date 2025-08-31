@@ -25,7 +25,6 @@ import {
   CreditCard,
   Settings,
   HelpCircle,
-  User,
   Shield,
   ChevronUp,
   LogOut,
