@@ -26,7 +26,6 @@
     "@payloadcms/plugin-search": "^3.54.0",
     "@payloadcms/plugin-seo": "^3.54.0",
     "@payloadcms/richtext-lexical": "^3.54.0",
-    "@payloadcms/storage-uploadthing": "^3.54.0",
     "@radix-ui/react-accordion": "1.2.2",
     "@radix-ui/react-alert-dialog": "1.1.4",
     "@radix-ui/react-aspect-ratio": "1.1.1",
@@ -82,7 +81,6 @@
     "stripe": "^16.12.0",
     "tailwind-merge": "^2.5.5",
     "tailwindcss-animate": "^1.0.7",
-    "uploadthing": "^7.7.4",
     "vaul": "^0.9.6",
     "zod": "^3.24.1"
   },
@@ -103,7 +101,7 @@
   },
   "resolutions": {
     "@effect/platform": "^0.58.0",
-    "@effect/schema": "0.68.27", 
+    "@effect/schema": "0.68.27",
     "effect": "3.17.7"
   }
 }
