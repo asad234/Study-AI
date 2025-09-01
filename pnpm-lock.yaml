@@ -6,6 +6,8 @@ settings:
 
 overrides:
   '@effect/platform': ^0.58.0
+  '@effect/schema': 0.68.27
+  effect: 3.17.7
 
 importers:
 
@@ -588,14 +590,14 @@ packages:
   '@effect/platform@0.58.27':
     resolution: {integrity: sha512-J/5ykWaFNo7rYC0b5/f/v8IC8i6QaOHM+eyUm7YnI01TeamHNvsVd9MB6YFjLBlgkogrKpOvcYDI+2jwyr0Mrw==}
     peerDependencies:
-      '@effect/schema': ^0.68.23
-      effect: ^3.5.3
+      '@effect/schema': 0.68.27
+      effect: 3.17.7
 
   '@effect/schema@0.68.27':
     resolution: {integrity: sha512-/rmIb+4QaQTecdTfeYSZtNikIV+BeIbYDl/hpgBTaS96en7pKNW5hcygFQhdocjKguIL7Y/be+oUrVafWV60ew==}
     deprecated: this package has been merged into the main effect package
     peerDependencies:
-      effect: ^3.5.7
+      effect: 3.17.7
 
   '@emnapi/core@1.5.0':
     resolution: {integrity: sha512-sbP8GzB1WDzacS8fgNPpHlp6C9VZe+SJP3F90W9rLemaQj2PzIuTEl1qDOYQf58YIpyjViI24y9aPWCjEzY2cg==}
@@ -3853,9 +3855,6 @@ packages:
   eastasianwidth@0.2.0:
     resolution: {integrity: sha512-I88TYZWc9XiYHRQ4/3c5rjjfgkjhLyW2luGIheGERbNQ6OY7yTybanSpDXZa8y7VUP9YmDcYa+eyq4ca7iLqWA==}
 
-  effect@3.10.3:
-    resolution: {integrity: sha512-+Z5bUhzTeqYlfoPsfXMZG1pYadqLBKARD3xwMIoEAESsOhKFOrUsHHNCy2ZZW3/6oa4wokgT01k1zavA4BAQ4w==}
-
   effect@3.17.7:
     resolution: {integrity: sha512-dpt0ONUn3zzAuul6k4nC/coTTw27AL5nhkORXgTi6NfMPzqWYa1M05oKmOMTxpVSTKepqXVcW9vIwkuaaqx9zA==}
 
@@ -6988,14 +6987,6 @@ snapshots:
 
   '@drizzle-team/brocli@0.10.2': {}
 
-  '@effect/platform@0.58.27(@effect/schema@0.68.27(effect@3.17.7))(effect@3.10.3)':
-    dependencies:
-      '@effect/schema': 0.68.27(effect@3.17.7)
-      effect: 3.10.3
-      find-my-way-ts: 0.1.6
-      multipasta: 0.2.7
-      path-browserify: 1.0.1
-
   '@effect/platform@0.58.27(@effect/schema@0.68.27(effect@3.17.7))(effect@3.17.7)':
     dependencies:
       '@effect/schema': 0.68.27(effect@3.17.7)
@@ -9570,7 +9561,7 @@ snapshots:
   '@uploadthing/shared@7.1.1':
     dependencies:
       '@uploadthing/mime-types': 0.3.2
-      effect: 3.10.3
+      effect: 3.17.7
       sqids: 0.3.0
 
   '@uploadthing/shared@7.1.10':
@@ -10311,10 +10302,6 @@ snapshots:
   duplexer@0.1.2: {}
 
   eastasianwidth@0.2.0: {}
-
-  effect@3.10.3:
-    dependencies:
-      fast-check: 3.23.2
 
   effect@3.17.7:
     dependencies:
@@ -13341,10 +13328,10 @@ snapshots:
 
   uploadthing@7.3.0(@effect/schema@0.68.27(effect@3.17.7))(next@15.2.4(react-dom@19.0.0(react@19.0.0))(react@19.0.0)(sass@1.77.4))(tailwindcss@3.4.17):
     dependencies:
-      '@effect/platform': 0.58.27(@effect/schema@0.68.27(effect@3.17.7))(effect@3.10.3)
+      '@effect/platform': 0.58.27(@effect/schema@0.68.27(effect@3.17.7))(effect@3.17.7)
       '@uploadthing/mime-types': 0.3.2
       '@uploadthing/shared': 7.1.1
-      effect: 3.10.3
+      effect: 3.17.7
     optionalDependencies:
       next: 15.2.4(react-dom@19.0.0(react@19.0.0))(react@19.0.0)(sass@1.77.4)
       tailwindcss: 3.4.17
