@@ -1,7 +1,6 @@
 import { buildConfig } from "payload"
 import { postgresAdapter } from "@payloadcms/db-postgres"
 import { lexicalEditor } from "@payloadcms/richtext-lexical"
-import { uploadthingStorage } from "@payloadcms/storage-uploadthing"
 import { Users } from "./src/collections/Users"
 import { Media } from "./src/collections/Media"
 import { Pages } from "./src/collections/Pages"
@@ -22,15 +21,5 @@ export default buildConfig({
       connectionString: process.env.PAYLOAD_DATABASE_URI || process.env.DATABASE_URL,
     },
   }),
-  plugins: [
-    uploadthingStorage({
-      collections: {
-        media: true,
-      },
-      options: {
-        token: process.env.UPLOADTHING_SECRET,
-        acl: "public-read",
-      },
-    }),
-  ],
+  // plugins array has been completely removed
 })
