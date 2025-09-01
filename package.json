@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@auth/prisma-adapter": "^2.10.0",
-    "@effect/platform": "^0.58.0",
+    "@effect/platform": "^0.58.27",
     "@faceless-ui/modal": "latest",
     "@faceless-ui/scroll-info": "latest",
     "@hookform/resolvers": "^3.9.1",
