@@ -1,58 +1,23 @@
 // src/payload-types.ts
-import { TypeWithID } from 'payload';
 
+// Base type from Payload
+export interface TypeWithID {
+  id: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Users collection
 export interface User extends TypeWithID {
   name?: string;
   email: string;
   password: string;
   roles: ('admin' | 'user')[];
   subscription_status?: 'active' | 'inactive' | 'canceled';
-  createdAt: string;
-  updatedAt: string;
 }
 
-export interface Document {
-  id: string;
-  title: string;
-  content?: string;
-  file?: string;
-  author: string | User;
-  authors?: (string | User)[];
-  populatedAuthors?: {
-    id: string;
-    name?: string;
-  }[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface Flashcard {
-  id: string;
-  question: string;
-  answer: string;
-  document?: string | Document;
-  author: string | User;
-  difficulty?: 'easy' | 'medium' | 'hard';
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface Quiz {
-  id: string;
-  title: string;
-  questions: {
-    question: string;
-    options: string[];
-    correctAnswer: number;
-  }[];
-  document?: string | Document;
-  author: string | User;
-  createdAt: string;
-  updatedAt: string;
-}
-
-export interface Media {
-  id: string;
+// Media collection
+export interface Media extends TypeWithID {
   alt: string;
   url?: string;
   filename: string;
@@ -60,24 +25,39 @@ export interface Media {
   filesize: number;
   width?: number;
   height?: number;
-  createdAt: string;
-  updatedAt: string;
 }
 
-// Collection configuration types
-export interface Config {
-  collections: {
-    users: User;
-    documents: Document;
-    flashcards: Flashcard;
-    quizzes: Quiz;
-    media: Media;
+// Categories collection
+export interface Category extends TypeWithID {
+  name: string;
+  slug: string;
+}
+
+// Pages collection
+export interface Page extends TypeWithID {
+  title: string;
+  slug: string;
+  content?: any; // could be rich text
+  heroImage?: string | Media;
+}
+
+// Posts collection
+export interface Post extends TypeWithID {
+  title: string;
+  slug: string;
+  heroImage?: string | Media;
+  content: any; // Lexical RichText JSON
+  relatedPosts?: (string | Post)[];
+  categories?: (string | Category)[];
+  authors?: (string | User)[];
+  populatedAuthors?: { id: string; name?: string }[];
+  meta?: {
+    title?: string;
+    description?: string;
+    image?: string | Media;
+    overview?: string;
+    preview?: string;
   };
+  publishedAt?: string;
+  _status?: 'draft' | 'published';
 }
-
-// Remove this problematic line - it's causing the declare error
-// declare global {
-//   export const payload: import('payload').Payload;
-// }
-
-export default Config;

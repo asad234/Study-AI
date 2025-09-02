@@ -13,6 +13,9 @@ importers:
 
   .:
     dependencies:
+      '18':
+        specifier: ^0.0.0
+        version: 0.0.0
       '@auth/prisma-adapter':
         specifier: ^2.10.0
         version: 2.10.0(@prisma/client@6.15.0(typescript@5.9.2))
@@ -262,6 +265,9 @@ importers:
         version: 5.9.2
 
 packages:
+
+  18@0.0.0:
+    resolution: {integrity: sha512-2SPMA/ciHy16yY4uVXDrW8q7nLwb2F2Vrt8Qz5OiVo9cyC8Wo8/rwC2hDzbqlTXhIwzt2Y4yJRLem6XMNbT/3A==}
 
   '@alloc/quick-lru@5.2.0':
     resolution: {integrity: sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw==}
@@ -6587,6 +6593,8 @@ packages:
     resolution: {integrity: sha512-bXE4cR/kVZhKZX/RjPEflHaKVhUVl85noU3v6b8apfQEc1x4A+zBxjZ4lN8LqGd6WZ3dl98pY4o717VFmoPp+A==}
 
 snapshots:
+
+  18@0.0.0: {}
 
   '@alloc/quick-lru@5.2.0': {}
 

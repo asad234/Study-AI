@@ -2,6 +2,7 @@
   "name": "studyai-platform",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "build": "next build",
     "dev": "cross-env NODE_OPTIONS='--inspect' next dev",
@@ -14,6 +15,7 @@
     "supabase:stop": "supabase stop"
   },
   "dependencies": {
+    "18": "^0.0.0",
     "@auth/prisma-adapter": "^2.10.0",
     "@effect/platform": "^0.58.27",
     "@faceless-ui/modal": "latest",
