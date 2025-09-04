@@ -2,7 +2,6 @@ import CredentialsProvider from "next-auth/providers/credentials"
 import type { NextAuthOptions } from "next-auth"
 import { getPayload } from "payload"
 import config from "@payload-config"
-import axios from "axios"
 import crypto from "crypto"
 
 export const authOptions: NextAuthOptions = {
@@ -14,34 +13,42 @@ export const authOptions: NextAuthOptions = {
         email: { label: "Email", type: "email" },
         password: { label: "Password", type: "password" },
       },
-      async authorize(credentials) {
+      async authorize(credentials, req) {
         try {
           console.log("🔐 Credentials login attempt:", credentials?.email)
 
-          // Sending a POST request to your API for login
-          const res = await axios.post(`${process.env.NEXTAUTH_URL}/api/users/login`, {
-            email: credentials?.email,
-            password: credentials?.password,
+          const payload = await getPayload({ config })
+
+          if (!credentials?.email || !credentials?.password) {
+            return null
+          }
+
+          // Use Payload's built-in login method directly
+          const result = await payload.login({
+            collection: "users",
+            data: {
+              email: credentials.email,
+              password: credentials.password,
+            },
           })
 
-          // If login is successful and a token is returned
-          if (res.data?.token) {
-            console.log("✅ Credentials login successful:", res.data.user.id)
+          if (result.user) {
+            console.log("✅ Credentials login successful:", result.user.id)
             return {
-              id: res.data.user.id.toString(),
-              email: res.data.user.email,
-              name: res.data.user.name || "",
-              roles: res.data.user.roles || ["client"],
-              token: res.data.token,
-              isNewUser: false, // Existing user logging in
+              id: result.user.id.toString(),
+              email: result.user.email || "",
+              name: result.user.name || "",
+              // Additional properties will be handled in JWT callback
+              roles: result.user.roles || ["client"],
+              token: result.token,
+              isNewUser: false,
             }
           }
 
-          // Throw error if no token is received
-          throw new Error("Invalid credentials")
+          return null
         } catch (error: any) {
-          console.error("❌ Credentials login failed:", error.response?.data?.message || error.message)
-          throw new Error(error.response?.data?.message || "Authentication failed")
+          console.error("❌ Credentials login failed:", error.message)
+          return null
         }
       },
     }),
