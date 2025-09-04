@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useCallback } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -9,6 +8,7 @@ import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { Upload, FileText, ImageIcon, Presentation, File, X, CheckCircle, AlertCircle, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { useSession } from "next-auth/react"
 
 interface UploadedFile {
   id: string
@@ -17,12 +17,14 @@ interface UploadedFile {
   type: string
   status: "uploading" | "processing" | "completed" | "error"
   progress: number
+  file: File
 }
 
 export default function UploadPage() {
   const [files, setFiles] = useState<UploadedFile[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const { toast } = useToast()
+  const { data: session } = useSession()
 
   const getFileIcon = (type: string) => {
     if (type.includes("pdf")) return <FileText className="w-6 h-6 text-red-500" />
@@ -41,44 +43,57 @@ export default function UploadPage() {
     return Number.parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + " " + sizes[i]
   }
 
-  const simulateFileProcessing = (fileId: string) => {
-    // Simulate upload progress
-    let progress = 0
-    const uploadInterval = setInterval(() => {
-      progress += Math.random() * 30
-      if (progress >= 100) {
-        progress = 100
-        clearInterval(uploadInterval)
+  const uploadFileToServer = async (file: UploadedFile) => {
+    try {
+      // Update status to uploading
+      setFiles((prev) => prev.map((f) => (f.id === file.id ? { ...f, status: "uploading", progress: 0 } : f)))
 
-        // Update to processing
-        setFiles((prev) => prev.map((f) => (f.id === fileId ? { ...f, status: "processing", progress: 0 } : f)))
+      const formData = new FormData()
+      formData.append("file", file.file)
+      formData.append("title", file.name.split(".")[0])
 
-        // Simulate processing
-        let processProgress = 0
-        const processInterval = setInterval(() => {
-          processProgress += Math.random() * 20
-          if (processProgress >= 100) {
-            processProgress = 100
-            clearInterval(processInterval)
+      const response = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      })
 
-            // Complete processing
-            setFiles((prev) => prev.map((f) => (f.id === fileId ? { ...f, status: "completed", progress: 100 } : f)))
-
-            toast({
-              title: "File processed successfully!",
-              description: "Your study materials are ready to use.",
-            })
-          } else {
-            setFiles((prev) => prev.map((f) => (f.id === fileId ? { ...f, progress: processProgress } : f)))
-          }
-        }, 500)
-      } else {
-        setFiles((prev) => prev.map((f) => (f.id === fileId ? { ...f, progress } : f)))
+      if (!response.ok) {
+        throw new Error("Upload failed")
       }
-    }, 300)
+
+      const result = await response.json()
+
+      // Update to processing
+      setFiles((prev) => prev.map((f) => (f.id === file.id ? { ...f, status: "processing", progress: 50 } : f)))
+
+      // Simulate processing completion
+      setTimeout(() => {
+        setFiles((prev) => prev.map((f) => (f.id === file.id ? { ...f, status: "completed", progress: 100 } : f)))
+        toast({
+          title: "File uploaded successfully!",
+          description: "Your study materials are ready to use.",
+        })
+      }, 2000)
+    } catch (error) {
+      setFiles((prev) => prev.map((f) => (f.id === file.id ? { ...f, status: "error", progress: 0 } : f)))
+      toast({
+        title: "Upload failed",
+        description: "There was an error uploading your file. Please try again.",
+        variant: "destructive",
+      })
+    }
   }
 
   const handleFileUpload = (uploadedFiles: FileList) => {
+    if (!session) {
+      toast({
+        title: "Please sign in",
+        description: "You need to be signed in to upload files.",
+        variant: "destructive",
+      })
+      return
+    }
+
     const newFiles: UploadedFile[] = Array.from(uploadedFiles).map((file) => ({
       id: Math.random().toString(36).substr(2, 9),
       name: file.name,
@@ -86,25 +101,29 @@ export default function UploadPage() {
       type: file.type,
       status: "uploading",
       progress: 0,
+      file: file,
     }))
 
     setFiles((prev) => [...prev, ...newFiles])
 
-    // Start processing each file
+    // Start uploading each file
     newFiles.forEach((file) => {
-      simulateFileProcessing(file.id)
+      uploadFileToServer(file)
     })
   }
 
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    setIsDragOver(false)
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault()
+      setIsDragOver(false)
 
-    const droppedFiles = e.dataTransfer.files
-    if (droppedFiles.length > 0) {
-      handleFileUpload(droppedFiles)
-    }
-  }, [])
+      const droppedFiles = e.dataTransfer.files
+      if (droppedFiles.length > 0) {
+        handleFileUpload(droppedFiles)
+      }
+    },
+    [session],
+  )
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault()
@@ -215,7 +234,7 @@ export default function UploadPage() {
             <input
               type="file"
               multiple
-              accept=".pdf,.docx,.pptx,.jpg,.jpeg,.png,.gif"
+              accept=".pdf,.docx,.pptx,.jpg,.jpeg,.png,.gif,.webp"
               onChange={(e) => e.target.files && handleFileUpload(e.target.files)}
               className="hidden"
               id="file-upload"
@@ -269,6 +288,7 @@ export default function UploadPage() {
           </CardContent>
         </Card>
       )}
+
 
       {/* Next Steps */}
       {files.some((f) => f.status === "completed") && (
