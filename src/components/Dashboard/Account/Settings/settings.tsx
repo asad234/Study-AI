@@ -12,6 +12,7 @@ import { Separator } from "@/components/ui/separator"
 import { User, Mail, Bell, Shield, Trash2, Upload, Moon, Sun, Globe, Smartphone } from "lucide-react"
 import { useTheme } from "next-themes"
 import { useToast } from "@/hooks/use-toast"
+import Profile from "../Profile/profile"
 
 export default function SettingsPage() {
   const [profile, setProfile] = useState({
@@ -69,76 +70,7 @@ export default function SettingsPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Profile Settings */}
         <div className="lg:col-span-2 space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <User className="w-5 h-5" />
-                Profile Information
-              </CardTitle>
-              <CardDescription>Update your personal information and profile details</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* Profile Picture */}
-              <div className="flex items-center gap-4">
-                <Avatar className="w-20 h-20">
-                  <AvatarImage src="/placeholder.svg?height=80&width=80" />
-                  <AvatarFallback className="text-lg">JD</AvatarFallback>
-                </Avatar>
-                <div>
-                  <Button variant="outline" size="sm">
-                    <Upload className="w-4 h-4 mr-2" />
-                    Change Photo
-                  </Button>
-                  <p className="text-sm text-gray-500 mt-1">JPG, PNG or GIF. Max size 2MB.</p>
-                </div>
-              </div>
-
-              <Separator />
-
-              {/* Form Fields */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="name">Full Name</Label>
-                  <Input
-                    id="name"
-                    value={profile.name}
-                    onChange={(e) => setProfile((prev) => ({ ...prev, name: e.target.value }))}
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="email">Email</Label>
-                  <Input
-                    id="email"
-                    type="email"
-                    value={profile.email}
-                    onChange={(e) => setProfile((prev) => ({ ...prev, email: e.target.value }))}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="bio">Bio</Label>
-                <Input
-                  id="bio"
-                  placeholder="Tell us about yourself"
-                  value={profile.bio}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, bio: e.target.value }))}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="location">Location</Label>
-                <Input
-                  id="location"
-                  placeholder="City, Country"
-                  value={profile.location}
-                  onChange={(e) => setProfile((prev) => ({ ...prev, location: e.target.value }))}
-                />
-              </div>
-
-              <Button onClick={handleProfileUpdate}>Save Changes</Button>
-            </CardContent>
-          </Card>
+          <Profile />
 
           {/* Notification Settings */}
           <Card>

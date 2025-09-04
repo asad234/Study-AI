@@ -12,6 +12,7 @@ import { Brain, Mail, Lock, Eye, EyeOff } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
+import { signIn } from "next-auth/react"
 
 export default function SignInPage() {
   const [email, setEmail] = useState("")
@@ -25,22 +26,47 @@ export default function SignInPage() {
     e.preventDefault()
     setIsLoading(true)
 
-    // Simulate authentication
-    setTimeout(() => {
-      setIsLoading(false)
-      toast({
-        title: "Welcome back!",
-        description: "You have been signed in successfully.",
+    try {
+      const result = await signIn("credentials", {
+        email,
+        password,
+        redirect: false,
       })
-      router.push("/dashboard")
-    }, 1000)
+
+      if (result?.error) {
+        toast({
+          title: "Sign in failed",
+          description: "Invalid email or password. Please try again.",
+          variant: "destructive",
+        })
+      } else {
+        toast({
+          title: "Welcome back!",
+          description: "You have been signed in successfully.",
+        })
+        router.push("/dashboard")
+      }
+    } catch (error) {
+      toast({
+        title: "Sign in failed",
+        description: "An error occurred. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  const handleGoogleSignIn = () => {
-    toast({
-      title: "Google Sign In",
-      description: "Google authentication would be implemented here.",
-    })
+  const handleGoogleSignIn = async () => {
+    try {
+      await signIn("google", { callbackUrl: "/dashboard" })
+    } catch (error) {
+      toast({
+        title: "Google Sign In Failed",
+        description: "An error occurred with Google authentication.",
+        variant: "destructive",
+      })
+    }
   }
 
   return (
@@ -120,7 +146,7 @@ export default function SignInPage() {
               </div>
             </div>
 
-            <Button variant="outline" className="w-full" onClick={handleGoogleSignIn}>
+            <Button variant="outline" className="w-full bg-transparent" onClick={handleGoogleSignIn}>
               <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
                 <path
                   d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"

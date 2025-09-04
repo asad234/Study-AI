@@ -64,6 +64,7 @@ export default buildConfig({
   },
 
   csrf: [
+    'https://study-rf1okjecj-asad234s-projects.vercel.app',
     process.env.NEXT_PUBLIC_SERVER_URL || "http://localhost:3000",
   ],
 

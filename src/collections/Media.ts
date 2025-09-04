@@ -1,26 +1,37 @@
-import { CollectionConfig } from 'payload';
+import type { CollectionConfig } from "payload"
 
 export const Media: CollectionConfig = {
-  slug: 'media',
+  slug: "media",
   access: {
-    create: () => true,
-    update: ({ req: { user } }) => user?.roles === 'admin',
-    delete: ({ req: { user } }) => user?.roles === 'admin',
-    read: () => true,
+    create: ({ req: { user } }) => !!user,
+    update: ({ req: { user } }) => !!user,
+    delete: ({ req: { user } }) => !!user,
+    read: ({ req: { user } }) => !!user,
   },
   fields: [
     {
-      name: 'alt',
-      label: 'Alt Text',
-      type: 'text',
+      name: "alt",
+      label: "Alt Text",
+      type: "text",
       required: false,
     },
     {
-      name: 'description',
-      label: 'Description',
-      type: 'textarea',
+      name: "description",
+      label: "Description",
+      type: "textarea",
       required: false,
     },
   ],
-  upload: true,
-};
+  upload: {
+    staticDir: "uploads",
+    mimeTypes: [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+    ],
+  },
+}

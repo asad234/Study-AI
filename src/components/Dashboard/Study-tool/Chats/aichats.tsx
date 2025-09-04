@@ -2,13 +2,14 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Send, Bot, User, FileText, BookOpen, Lightbulb, MessageSquare } from "lucide-react"
+import { useSession } from "next-auth/react"
 
 interface Message {
   id: string
@@ -39,6 +40,32 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>(sampleMessages)
   const [inputMessage, setInputMessage] = useState("")
   const [isTyping, setIsTyping] = useState(false)
+  const [availableMaterials, setAvailableMaterials] = useState<any[]>([])
+  const [isLoadingMaterials, setIsLoadingMaterials] = useState(true)
+  const { data: session } = useSession()
+
+  useEffect(() => {
+    const fetchMaterials = async () => {
+      if (!session?.user?.email) return
+
+      try {
+        setIsLoadingMaterials(true)
+        const response = await fetch("/api/documents")
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && Array.isArray(data.documents)) {
+            setAvailableMaterials(data.documents)
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch materials:", error)
+      } finally {
+        setIsLoadingMaterials(false)
+      }
+    }
+
+    fetchMaterials()
+  }, [session])
 
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return
@@ -217,7 +244,7 @@ export default function ChatPage() {
                 <Button
                   key={index}
                   variant="outline"
-                  className="w-full text-left h-auto p-3 text-sm"
+                  className="w-full text-left h-auto p-3 text-sm bg-transparent"
                   onClick={() => handleSuggestedQuestion(question)}
                 >
                   {question}
@@ -235,17 +262,25 @@ export default function ChatPage() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {[
-                "Biology Chapter 5.pdf",
-                "Cell Structure Notes.docx",
-                "Photosynthesis Slides.pptx",
-                "Lab Report Template.pdf",
-              ].map((file, index) => (
-                <div key={index} className="flex items-center gap-2 p-2 border rounded">
-                  <FileText className="w-4 h-4 text-gray-500" />
-                  <span className="text-sm truncate">{file}</span>
+              {isLoadingMaterials ? (
+                <div className="text-sm text-gray-500 text-center py-4">Loading materials...</div>
+              ) : availableMaterials.length > 0 ? (
+                availableMaterials.map((file) => (
+                  <div key={file.id} className="flex items-center gap-2 p-2 border rounded">
+                    <FileText className="w-4 h-4 text-gray-500" />
+                    <span className="text-sm truncate">{file.title || file.file_name}</span>
+                    {file.status === "ready" && (
+                      <Badge variant="secondary" className="text-xs ml-auto">
+                        Ready
+                      </Badge>
+                    )}
+                  </div>
+                ))
+              ) : (
+                <div className="text-sm text-gray-500 text-center py-4">
+                  No materials uploaded yet. Upload some study materials to get started!
                 </div>
-              ))}
+              )}
             </CardContent>
           </Card>
 

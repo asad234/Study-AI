@@ -1,5 +1,7 @@
 "use client"
 
+import { useEffect, useState } from "react"
+import { signOut } from "next-auth/react"
 import {
   Sidebar,
   SidebarContent,
@@ -31,6 +33,12 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+
+interface UserProfile {
+  firstName: string // Changed from first_name to firstName to match API response
+  lastName: string // Changed from last_name to lastName to match API response
+  email: string
+}
 
 const navigationItems = [
   {
@@ -93,6 +101,48 @@ const accountItems = [
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchUserProfile = async () => {
+      try {
+        const response = await fetch("/api/profile")
+
+        if (response.ok) {
+          const profile = await response.json()
+          setUserProfile(profile)
+        } else {
+          const errorText = await response.text()
+        }
+      } catch (error) {
+        console.error("Failed to fetch user profile:", error)
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchUserProfile()
+  }, [])
+
+  const handleSignOut = async () => {
+    await signOut({ callbackUrl: "/auth/signin" })
+  }
+
+  const getUserInitials = () => {
+    if (!userProfile) return "JD"
+    const firstInitial = userProfile.firstName?.charAt(0) || "J" // Updated field name
+    const lastInitial = userProfile.lastName?.charAt(0) || "D" // Updated field name
+    return `${firstInitial}${lastInitial}`.toUpperCase()
+  }
+
+  const getUserDisplayName = () => {
+    if (!userProfile) {
+      return "John Doe"
+    }
+    const displayName = `${userProfile.firstName || "John"} ${userProfile.lastName || "Doe"}`
+    return displayName
+  }
 
   return (
     <Sidebar className="bg-background border-r">
@@ -173,20 +223,20 @@ export function AppSidebar() {
                 <SidebarMenuButton className="hover:bg-accent">
                   <Avatar className="h-6 w-6">
                     <AvatarImage src="/placeholder.svg?height=24&width=24" />
-                    <AvatarFallback>JD</AvatarFallback>
+                    <AvatarFallback>{getUserInitials()}</AvatarFallback>
                   </Avatar>
-                  <span>John Doe</span>
+                  <span>{loading ? "Loading..." : getUserDisplayName()}</span>
                   <ChevronUp className="ml-auto" />
                 </SidebarMenuButton>
               </DropdownMenuTrigger>
-              <DropdownMenuContent side="top" className="w-[--radix-popper-anchor-width] bg-background border">
+              <DropdownMenuContent side="top" className="w-(--radix-popper-anchor-width) bg-background border">
                 <DropdownMenuItem asChild className="hover:bg-accent">
                   <Link href="/dashboard/settings">
                     <Settings className="mr-2 h-4 w-4" />
                     Settings
                   </Link>
                 </DropdownMenuItem>
-                <DropdownMenuItem className="hover:bg-accent">
+                <DropdownMenuItem className="hover:bg-accent" onClick={handleSignOut}>
                   <LogOut className="mr-2 h-4 w-4" />
                   Sign out
                 </DropdownMenuItem>

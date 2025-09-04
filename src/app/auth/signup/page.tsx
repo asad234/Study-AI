@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,10 +12,12 @@ import { Brain, Mail, Lock, Eye, EyeOff, User } from "lucide-react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { useToast } from "@/hooks/use-toast"
+import { signIn } from "next-auth/react"
 
 export default function SignUpPage() {
   const [formData, setFormData] = useState({
-    name: "",
+    firstName: "",
+    lastName: "",
     email: "",
     password: "",
     confirmPassword: "",
@@ -58,15 +59,60 @@ export default function SignUpPage() {
 
     setIsLoading(true)
 
-    // Simulate account creation
-    setTimeout(() => {
-      setIsLoading(false)
+    try {
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          firstName: formData.firstName,
+          lastName: formData.lastName,
+          email: formData.email,
+          password: formData.password,
+        }),
+      })
+
+      const data = await res.json()
+
+      if (!res.ok) {
+        throw new Error(data.error || "Signup failed")
+      }
+
       toast({
         title: "Account created!",
-        description: "Welcome to StudyAI. Let's start learning!",
+        description: "Welcome to StudyAI. Signing you in...",
       })
-      router.push("/dashboard")
-    }, 1000)
+
+      console.log("[v0] Attempting to sign in after signup...")
+      const signInResult = await signIn("credentials", {
+        email: formData.email,
+        password: formData.password,
+        redirect: false,
+      })
+
+      console.log("[v0] Sign in result:", signInResult)
+
+      if (signInResult?.error) {
+        console.error("[v0] Sign in failed:", signInResult.error)
+        toast({
+          title: "Account created but sign in failed",
+          description: "Please sign in manually.",
+          variant: "destructive",
+        })
+        router.push("/auth/signin")
+      } else {
+        console.log("[v0] Sign in successful, redirecting to dashboard...")
+        router.push("/dashboard")
+      }
+    } catch (err: any) {
+      console.error("[v0] Signup error:", err)
+      toast({
+        title: "Error",
+        description: err.message || "Something went wrong",
+        variant: "destructive",
+      })
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const handleGoogleSignUp = () => {
@@ -94,16 +140,17 @@ export default function SignUpPage() {
           </CardHeader>
           <CardContent className="space-y-6">
             <form onSubmit={handleSignUp} className="space-y-4">
+              {/* First Name */}
               <div className="space-y-2">
-                <Label htmlFor="name">Full Name</Label>
+                <Label htmlFor="firstName">First Name</Label>
                 <div className="relative">
                   <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
                   <Input
-                    id="name"
-                    name="name"
+                    id="firstName"
+                    name="firstName"
                     type="text"
-                    placeholder="Enter your full name"
-                    value={formData.name}
+                    placeholder="Enter your first name"
+                    value={formData.firstName}
                     onChange={handleInputChange}
                     className="pl-10"
                     required
@@ -111,6 +158,25 @@ export default function SignUpPage() {
                 </div>
               </div>
 
+              {/* Last Name */}
+              <div className="space-y-2">
+                <Label htmlFor="lastName">Last Name</Label>
+                <div className="relative">
+                  <User className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+                  <Input
+                    id="lastName"
+                    name="lastName"
+                    type="text"
+                    placeholder="Enter your last name"
+                    value={formData.lastName}
+                    onChange={handleInputChange}
+                    className="pl-10"
+                    required
+                  />
+                </div>
+              </div>
+
+              {/* Email */}
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <div className="relative">
@@ -128,6 +194,7 @@ export default function SignUpPage() {
                 </div>
               </div>
 
+              {/* Password */}
               <div className="space-y-2">
                 <Label htmlFor="password">Password</Label>
                 <div className="relative">
@@ -152,6 +219,7 @@ export default function SignUpPage() {
                 </div>
               </div>
 
+              {/* Confirm Password */}
               <div className="space-y-2">
                 <Label htmlFor="confirmPassword">Confirm Password</Label>
                 <div className="relative">
@@ -176,6 +244,7 @@ export default function SignUpPage() {
                 </div>
               </div>
 
+              {/* Terms */}
               <div className="flex items-center space-x-2">
                 <Checkbox
                   id="terms"
@@ -208,7 +277,7 @@ export default function SignUpPage() {
               </div>
             </div>
 
-            <Button variant="outline" className="w-full" onClick={handleGoogleSignUp}>
+            <Button variant="outline" className="w-full bg-transparent" onClick={handleGoogleSignUp}>
               <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
                 <path
                   d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"

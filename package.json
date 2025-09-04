@@ -20,7 +20,7 @@
     "@faceless-ui/modal": "latest",
     "@faceless-ui/scroll-info": "latest",
     "@hookform/resolvers": "^3.9.1",
-    "@payloadcms/bundler-webpack": "1.0.7",
+    "@payloadcms/bundler-webpack": "3.54.0",
     "@payloadcms/db-postgres": "3.54.0",
     "@payloadcms/db-sqlite": "^3.54.0",
     "@payloadcms/next": "3.54.0",
