@@ -17,6 +17,7 @@ import {
   Star,
   BarChart3,
   FileText,
+  Sparkles,
 } from "lucide-react"
 
 interface Flashcard {
@@ -26,6 +27,8 @@ interface Flashcard {
   difficulty: "easy" | "medium" | "hard"
   subject: string
   mastered: boolean
+  review_count?: number
+  last_reviewed?: string
 }
 
 interface Document {
@@ -37,51 +40,34 @@ interface Document {
   created_at: string
 }
 
-const sampleCards: Flashcard[] = [
-  {
-    id: "1",
-    question: "What is photosynthesis?",
-    answer:
-      "Photosynthesis is the process by which plants use sunlight, water, and carbon dioxide to create oxygen and energy in the form of sugar.",
-    difficulty: "medium",
-    subject: "Biology",
-    mastered: false,
-  },
-  {
-    id: "2",
-    question: "What is the formula for the area of a circle?",
-    answer: "The formula for the area of a circle is A = πr², where r is the radius of the circle.",
-    difficulty: "easy",
-    subject: "Mathematics",
-    mastered: true,
-  },
-  {
-    id: "3",
-    question: 'Who wrote "To Kill a Mockingbird"?',
-    answer: 'Harper Lee wrote "To Kill a Mockingbird", published in 1960.',
-    difficulty: "easy",
-    subject: "Literature",
-    mastered: false,
-  },
-  {
-    id: "4",
-    question: "What is the difference between mitosis and meiosis?",
-    answer:
-      "Mitosis produces two identical diploid cells for growth and repair, while meiosis produces four genetically different haploid gametes for reproduction.",
-    difficulty: "hard",
-    subject: "Biology",
-    mastered: false,
-  },
-]
-
 export default function FlashcardsPage() {
-  const [cards] = useState<Flashcard[]>(sampleCards)
+  const [cards, setCards] = useState<Flashcard[]>([])
+  const [loadingCards, setLoadingCards] = useState(true)
+  const [generatingCards, setGeneratingCards] = useState(false)
   const [currentCardIndex, setCurrentCardIndex] = useState(0)
   const [isFlipped, setIsFlipped] = useState(false)
   const [studyMode, setStudyMode] = useState<"all" | "unmastered">("all")
   const [materials, setMaterials] = useState<Document[]>([])
   const [loadingMaterials, setLoadingMaterials] = useState(true)
   const { data: session } = useSession()
+
+  const fetchFlashcards = async () => {
+    if (!session?.user?.email) return
+
+    try {
+      const response = await fetch("/api/flashcards")
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success && Array.isArray(data.flashcards)) {
+          setCards(data.flashcards)
+        }
+      }
+    } catch (error) {
+      console.error("Failed to fetch flashcards:", error)
+    } finally {
+      setLoadingCards(false)
+    }
+  }
 
   useEffect(() => {
     const fetchMaterials = async () => {
@@ -103,7 +89,70 @@ export default function FlashcardsPage() {
     }
 
     fetchMaterials()
+    fetchFlashcards()
   }, [session])
+
+  const generateFlashcards = async () => {
+    const readyMaterials = materials.filter((m) => m.status === "ready")
+
+    if (readyMaterials.length === 0) {
+      console.error("No ready materials available for flashcard generation")
+      return
+    }
+
+    setGeneratingCards(true)
+
+    try {
+      console.log("[v0] Starting flashcard generation...")
+      console.log("[v0] Ready materials:", readyMaterials)
+      console.log("[v0] Using document ID:", readyMaterials[0].id)
+
+      const requestBody = {
+        subject: "Mixed",
+        documentId: readyMaterials[0].id,
+      }
+      console.log("[v0] Request body:", requestBody)
+
+      const response = await fetch("/api/flashcards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      })
+
+      console.log("[v0] Response status:", response.status)
+      console.log("[v0] Response ok:", response.ok)
+
+      const data = await response.json()
+      console.log("[v0] Response data:", data)
+
+      if (data.success && Array.isArray(data.flashcards)) {
+        console.log("[v0] Successfully generated flashcards:", data.flashcards.length)
+        await fetchFlashcards()
+        setCurrentCardIndex(0)
+        setIsFlipped(false)
+      } else {
+        console.error("Failed to generate flashcards:", data.error)
+        console.error("[v0] Full error response:", data)
+      }
+    } catch (error) {
+      console.error("Failed to generate flashcards:", error)
+      console.error("[v0] Network or parsing error:", error)
+    } finally {
+      setGeneratingCards(false)
+    }
+  }
+
+  const updateFlashcardStatus = async (flashcardId: string, mastered: boolean) => {
+    try {
+      setCards((prev) =>
+        prev.map((card) =>
+          card.id === flashcardId ? { ...card, mastered, review_count: (card.review_count || 0) + 1 } : card,
+        ),
+      )
+    } catch (error) {
+      console.error("Failed to update flashcard:", error)
+    }
+  }
 
   const getFileIcon = (type: string) => {
     if (type.includes("pdf")) return <FileText className="w-4 h-4 text-red-500" />
@@ -126,9 +175,22 @@ export default function FlashcardsPage() {
     }
   }
 
+  const getDifficultyColor = (difficulty: string) => {
+    switch (difficulty) {
+      case "easy":
+        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+      case "medium":
+        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+      case "hard":
+        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+      default:
+        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
+    }
+  }
+
   const filteredCards = studyMode === "all" ? cards : cards.filter((card) => !card.mastered)
   const currentCard = filteredCards[currentCardIndex]
-  const progress = ((currentCardIndex + 1) / filteredCards.length) * 100
+  const progress = filteredCards.length > 0 ? ((currentCardIndex + 1) / filteredCards.length) * 100 : 0
 
   const nextCard = () => {
     setCurrentCardIndex((prev) => (prev + 1) % filteredCards.length)
@@ -143,30 +205,31 @@ export default function FlashcardsPage() {
   const shuffleCards = () => {
     setCurrentCardIndex(0)
     setIsFlipped(false)
-    // In a real app, you would shuffle the cards array
   }
 
   const markAsKnown = () => {
-    // In a real app, you would update the card's mastered status
+    if (currentCard) {
+      updateFlashcardStatus(currentCard.id, true)
+    }
     nextCard()
   }
 
   const markAsUnknown = () => {
-    // In a real app, you would update the card's mastered status
+    if (currentCard) {
+      updateFlashcardStatus(currentCard.id, false)
+    }
     nextCard()
   }
 
-  const getDifficultyColor = (difficulty: string) => {
-    switch (difficulty) {
-      case "easy":
-        return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-      case "medium":
-        return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
-      case "hard":
-        return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
-      default:
-        return "bg-gray-100 text-gray-800 dark:bg-gray-900 dark:text-gray-200"
-    }
+  if (loadingCards) {
+    return (
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Flashcards</h1>
+          <p className="text-gray-600 dark:text-gray-300">Loading your flashcards...</p>
+        </div>
+      </div>
+    )
   }
 
   if (!currentCard) {
@@ -174,15 +237,32 @@ export default function FlashcardsPage() {
       <div className="space-y-6">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Flashcards</h1>
-          <p className="text-gray-600 dark:text-gray-300">No cards available. Upload some study materials first!</p>
+          <p className="text-gray-600 dark:text-gray-300">No flashcards available yet.</p>
         </div>
+
+        {materials.length > 0 && (
+          <Card>
+            <CardContent className="p-6 text-center">
+              <Sparkles className="w-12 h-12 text-primary mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">Generate AI Flashcards</h3>
+              <p className="text-gray-600 dark:text-gray-300 mb-4">
+                Create study flashcards from your uploaded materials using AI
+              </p>
+              <Button
+                onClick={generateFlashcards}
+                disabled={generatingCards || materials.filter((m) => m.status === "ready").length === 0}
+              >
+                {generatingCards ? "Generating..." : "Generate Flashcards"}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
       </div>
     )
   }
 
   return (
     <div className="flex gap-6">
-      {/* Main Content */}
       <div className="flex-1 space-y-6">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
@@ -190,6 +270,15 @@ export default function FlashcardsPage() {
             <p className="text-gray-600 dark:text-gray-300">Study with AI-generated flashcards from your materials</p>
           </div>
           <div className="flex gap-2">
+            <Button
+              variant="default"
+              onClick={generateFlashcards}
+              disabled={generatingCards || materials.filter((m) => m.status === "ready").length === 0}
+              className="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600"
+            >
+              <Sparkles className="w-4 h-4 mr-2" />
+              {generatingCards ? "Generating..." : "Generate More"}
+            </Button>
             <Button variant={studyMode === "all" ? "default" : "outline"} onClick={() => setStudyMode("all")}>
               All Cards
             </Button>
@@ -202,7 +291,6 @@ export default function FlashcardsPage() {
           </div>
         </div>
 
-        {/* Progress */}
         <Card>
           <CardContent className="p-4">
             <div className="flex items-center justify-between mb-2">
@@ -215,7 +303,6 @@ export default function FlashcardsPage() {
           </CardContent>
         </Card>
 
-        {/* Main Flashcard */}
         <div className="flex justify-center">
           <div className="w-full max-w-2xl">
             <Card
@@ -250,9 +337,7 @@ export default function FlashcardsPage() {
           </div>
         </div>
 
-        {/* Controls */}
         <div className="flex flex-col gap-4">
-          {/* Navigation */}
           <div className="flex justify-center gap-4">
             <Button variant="outline" onClick={prevCard}>
               <ChevronLeft className="w-4 h-4 mr-2" />
@@ -268,7 +353,6 @@ export default function FlashcardsPage() {
             </Button>
           </div>
 
-          {/* Study Actions */}
           {isFlipped && (
             <div className="flex justify-center gap-4">
               <Button variant="outline" className="text-red-600 border-red-200 bg-transparent" onClick={markAsUnknown}>
@@ -282,7 +366,6 @@ export default function FlashcardsPage() {
             </div>
           )}
 
-          {/* Additional Controls */}
           <div className="flex justify-center">
             <Button variant="ghost" onClick={shuffleCards}>
               <Shuffle className="w-4 h-4 mr-2" />
@@ -291,7 +374,6 @@ export default function FlashcardsPage() {
           </div>
         </div>
 
-        {/* Study Stats */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <Card>
             <CardContent className="p-4 text-center">
@@ -317,7 +399,6 @@ export default function FlashcardsPage() {
         </div>
       </div>
 
-      {/* Available Materials Sidebar */}
       <div className="w-80 space-y-4">
         <Card>
           <CardHeader>
@@ -330,19 +411,33 @@ export default function FlashcardsPage() {
             {loadingMaterials ? (
               <div className="text-sm text-gray-500">Loading materials...</div>
             ) : materials.length > 0 ? (
-              materials.map((material) => (
-                <div
-                  key={material.id}
-                  className="flex items-start gap-3 p-3 rounded-lg border bg-gray-50 dark:bg-gray-800"
-                >
-                  {getFileIcon(material.file_type)}
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{material.file_name}</p>
-                    <p className="text-xs text-gray-500 capitalize">{material.file_type}</p>
-                    <Badge className={`text-xs mt-1 ${getStatusBadgeColor(material.status)}`}>{material.status}</Badge>
+              <>
+                {materials.map((material) => (
+                  <div
+                    key={material.id}
+                    className="flex items-start gap-3 p-3 rounded-lg border bg-gray-50 dark:bg-gray-800"
+                  >
+                    {getFileIcon(material.file_type)}
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{material.file_name}</p>
+                      <p className="text-xs text-gray-500 capitalize">{material.file_type}</p>
+                      <Badge className={`text-xs mt-1 ${getStatusBadgeColor(material.status)}`}>
+                        {material.status}
+                      </Badge>
+                    </div>
                   </div>
-                </div>
-              ))
+                ))}
+
+                <Button
+                  onClick={generateFlashcards}
+                  disabled={generatingCards || materials.filter((m) => m.status === "ready").length === 0}
+                  className="w-full mt-3"
+                  variant="outline"
+                >
+                  <Sparkles className="w-4 h-4 mr-2" />
+                  {generatingCards ? "Generating..." : "Generate Flashcards"}
+                </Button>
+              </>
             ) : (
               <div className="text-sm text-gray-500 text-center py-4">
                 No materials uploaded yet. Upload some study materials to generate flashcards!
