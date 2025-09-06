@@ -1,37 +1,24 @@
-import { v4 as uuidv4 } from 'uuid';
-import type { CollectionConfig } from 'payload';
-import { afterConversationChange, afterConversationDelete } from './hooks/revalidate';
+import type { CollectionConfig } from "payload"
+import { afterConversationChange, afterConversationDelete } from "./hooks/chat-validate"
 
 export const ChatConversations: CollectionConfig = {
-  slug: 'chat_conversations',
+  slug: "chat_conversations",
   admin: {
-    defaultColumns: ['title', 'user', 'created_at'],
-    useAsTitle: 'title',
+    defaultColumns: ["title", "user", "createdAt"],
+    useAsTitle: "title",
   },
   fields: [
     {
-      name: 'user',
-      type: 'relationship',
-      relationTo: 'profiles', // must match Profiles.slug
+      name: "user",
+      type: "relationship",
+      relationTo: "profiles",
       required: true,
-      admin: { description: 'Owner of the conversation' },
+      admin: { description: "Owner of the conversation" },
     },
-    { name: 'title', type: 'text' },
-    {
-      name: 'created_at',
-      type: 'date',
-      required: true,
-      defaultValue: () => new Date().toISOString(),
-    },
-    {
-      name: 'updated_at',
-      type: 'date',
-      required: true,
-      defaultValue: () => new Date().toISOString(),
-    },
+    { name: "title", type: "text" },
   ],
   hooks: {
     afterChange: [afterConversationChange],
     afterDelete: [afterConversationDelete],
   },
-};
+}
