@@ -18,6 +18,7 @@ export async function POST(request: NextRequest) {
     })
 
     const mainOperation = async () => {
+      console.log("[v0] Starting main operation")
       const session = await getServerSession(authOptions)
 
       if (!session?.user?.email) {
@@ -29,23 +30,37 @@ export async function POST(request: NextRequest) {
 
       let payload
       try {
+        console.log("[v0] Initializing Payload...")
         payload = await getPayload({ config: configPromise })
         console.log("[v0] Payload initialized successfully")
       } catch (payloadError) {
         console.error("[v0] Payload initialization failed:", payloadError)
-        return NextResponse.json({ error: "Database connection failed" }, { status: 500 })
+        return NextResponse.json({ 
+          error: "Database connection failed", 
+          details: payloadError instanceof Error ? payloadError.message : "Unknown payload error"
+        }, { status: 500 })
       }
 
       // Get user's profile
       console.log("[v0] Looking for profile with email:", session.user.email)
-      const profiles = await payload.find({
-        collection: "profiles",
-        where: {
-          email: {
-            equals: session.user.email,
+      let profiles
+      try {
+        profiles = await payload.find({
+          collection: "profiles",
+          where: {
+            email: {
+              equals: session.user.email,
+            },
           },
-        },
-      })
+        })
+        console.log("[v0] Profile query completed, found:", profiles.docs.length, "profiles")
+      } catch (profileError) {
+        console.error("[v0] Profile lookup failed:", profileError)
+        return NextResponse.json({ 
+          error: "Profile lookup failed",
+          details: profileError instanceof Error ? profileError.message : "Unknown profile error"
+        }, { status: 500 })
+      }
 
       if (profiles.docs.length === 0) {
         console.log("[v0] No profile found for email:", session.user.email)
@@ -57,13 +72,17 @@ export async function POST(request: NextRequest) {
 
       let formData, file, title
       try {
+        console.log("[v0] Parsing form data...")
         formData = await request.formData()
         file = formData.get("file") as File
         title = formData.get("title") as string
-        console.log("[v0] Form data parsed, file:", file?.name, "title:", title)
+        console.log("[v0] Form data parsed, file:", file?.name, "size:", file?.size, "title:", title)
       } catch (formError) {
         console.error("[v0] Form data parsing failed:", formError)
-        return NextResponse.json({ error: "Invalid form data" }, { status: 400 })
+        return NextResponse.json({ 
+          error: "Invalid form data",
+          details: formError instanceof Error ? formError.message : "Unknown form error"
+        }, { status: 400 })
       }
 
       if (!file) {
@@ -83,12 +102,14 @@ export async function POST(request: NextRequest) {
       ]
 
       if (!allowedTypes.includes(file.type)) {
+        console.log("[v0] Invalid file type:", file.type)
         return NextResponse.json({ error: "File type not supported" }, { status: 400 })
       }
 
       // Updated file size validation for Vercel limits
       if (file.size > MAX_FILE_SIZE) {
         const maxSizeMB = MAX_FILE_SIZE / (1024 * 1024)
+        console.log("[v0] File too large:", file.size, "max:", MAX_FILE_SIZE)
         return NextResponse.json({ 
           error: `File size too large. Maximum allowed: ${maxSizeMB}MB` 
         }, { status: 400 })
@@ -98,10 +119,13 @@ export async function POST(request: NextRequest) {
 
       let mediaResult
       try {
+        console.log("[v0] Converting file to buffer...")
         // Convert file to buffer more efficiently
         const arrayBuffer = await file.arrayBuffer()
         const buffer = Buffer.from(arrayBuffer)
+        console.log("[v0] Buffer created, size:", buffer.length)
         
+        console.log("[v0] Creating media record...")
         mediaResult = await payload.create({
           collection: "media",
           data: {
@@ -118,11 +142,15 @@ export async function POST(request: NextRequest) {
         console.log("[v0] Media created successfully:", mediaResult.id)
       } catch (mediaError) {
         console.error("[v0] Media creation failed:", mediaError)
-        return NextResponse.json({ error: "File upload failed" }, { status: 500 })
+        return NextResponse.json({ 
+          error: "File upload failed",
+          details: mediaError instanceof Error ? mediaError.message : "Unknown media error"
+        }, { status: 500 })
       }
 
       let documentResult
       try {
+        console.log("[v0] Creating document record...")
         documentResult = await payload.create({
           collection: "documents",
           data: {
@@ -145,7 +173,10 @@ export async function POST(request: NextRequest) {
         console.log("[v0] Document created successfully:", documentResult.id)
       } catch (docError) {
         console.error("[v0] Document creation failed:", docError)
-        return NextResponse.json({ error: "Document creation failed" }, { status: 500 })
+        return NextResponse.json({ 
+          error: "Document creation failed",
+          details: docError instanceof Error ? docError.message : "Unknown document error"
+        }, { status: 500 })
       }
 
       console.log("[v0] Upload completed successfully")
