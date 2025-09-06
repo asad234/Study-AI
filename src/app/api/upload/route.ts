@@ -188,12 +188,6 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// Add these export configurations for Vercel
-export const config = {
-  api: {
-    bodyParser: {
-      sizeLimit: process.env.NODE_ENV === 'production' ? '4mb' : '50mb',
-    },
-  },
-  maxDuration: 9, // 9 seconds max for Vercel Hobby
-}
+// Add these export configurations for App Router
+export const maxDuration = 9 // 9 seconds max for Vercel Hobby
+export const dynamic = 'force-dynamic'
