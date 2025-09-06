@@ -1,10 +1,10 @@
-import type { CollectionAfterChangeHook, CollectionAfterDeleteHook } from 'payload'
-import { revalidatePath, revalidateTag } from 'next/cache'
+import type { CollectionAfterChangeHook, CollectionAfterDeleteHook } from "payload"
+import { revalidatePath, revalidateTag } from "next/cache"
 
 export const afterQuizChange: CollectionAfterChangeHook = ({ doc, previousDoc, req: { context, payload } }) => {
   if (!context.disableRevalidate) {
     revalidatePath(`/quizzes/${doc.id}`)
-    revalidateTag('quizzes-sitemap')
+    revalidateTag("quizzes-sitemap")
   }
   return doc
 }
@@ -12,7 +12,7 @@ export const afterQuizChange: CollectionAfterChangeHook = ({ doc, previousDoc, r
 export const afterQuizDelete: CollectionAfterDeleteHook = ({ doc, req: { context } }) => {
   if (!context.disableRevalidate) {
     revalidatePath(`/quizzes/${doc?.id}`)
-    revalidateTag('quizzes-sitemap')
+    revalidateTag("quizzes-sitemap")
   }
   return doc
 }

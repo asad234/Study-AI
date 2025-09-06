@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { Label } from "@/components/ui/label"
-import { Clock, CheckCircle, X, RotateCcw, Trophy } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Clock, CheckCircle, X, RotateCcw, Trophy, Loader2, Plus } from "lucide-react"
 import { useSession } from "next-auth/react"
 import { FileText, File, ImageIcon, Presentation } from "lucide-react"
 
@@ -34,6 +35,11 @@ interface Material {
   file_name: string
   file_type: string
   status: string
+}
+
+interface Quiz {
+  id: string
+  questions: Question[]
 }
 
 const sampleQuestions: Question[] = [
@@ -70,7 +76,7 @@ const sampleQuestions: Question[] = [
 ]
 
 export default function QuizPage() {
-  const [questions] = useState<Question[]>(sampleQuestions)
+  const [questions, setQuestions] = useState<Question[]>(sampleQuestions)
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
   const [showResult, setShowResult] = useState(false)
@@ -80,6 +86,12 @@ export default function QuizPage() {
   const { data: session } = useSession()
   const [availableMaterials, setAvailableMaterials] = useState<Material[]>([])
   const [materialsLoading, setMaterialsLoading] = useState(true)
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false)
+  const [selectedMaterial, setSelectedMaterial] = useState<string>("")
+  const [quizDifficulty, setQuizDifficulty] = useState<string>("medium")
+  const [questionCount, setQuestionCount] = useState<string>("5")
+  const [currentQuiz, setCurrentQuiz] = useState<Quiz | null>(null)
+  const [quizStarted, setQuizStarted] = useState(false)
 
   useEffect(() => {
     const fetchMaterials = async () => {
@@ -87,11 +99,18 @@ export default function QuizPage() {
 
       try {
         const response = await fetch("/api/documents")
+
         if (response.ok) {
           const data = await response.json()
+
           if (data.success && Array.isArray(data.documents)) {
-            setAvailableMaterials(data.documents)
+            setAvailableMaterials(() => {
+              return data.documents
+            })
           }
+        } else {
+          const errorData = await response.json()
+          console.error("Documents API failed:", errorData)
         }
       } catch (error) {
         console.error("Failed to fetch materials:", error)
@@ -127,7 +146,7 @@ export default function QuizPage() {
     setShowResult(true)
   }
 
-  const handleNextQuestion = () => {
+  const handleNextQuestion = async () => {
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex((prev) => prev + 1)
       setSelectedAnswer(null)
@@ -135,6 +154,27 @@ export default function QuizPage() {
       setStartTime(Date.now())
     } else {
       setQuizCompleted(true)
+
+      // Save quiz attempt
+      if (currentQuiz) {
+        try {
+          await fetch("/api/quiz/attempt", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              quizId: currentQuiz.id,
+              answers: quizResults.map((result) => ({
+                questionId: result.questionId,
+                selectedAnswer: result.selectedAnswer,
+                timeSpent: result.timeSpent,
+              })),
+              totalTime: Date.now() - startTime,
+            }),
+          })
+        } catch (error) {
+          console.error("Failed to save quiz attempt:", error)
+        }
+      }
     }
   }
 
@@ -145,6 +185,8 @@ export default function QuizPage() {
     setQuizResults([])
     setQuizCompleted(false)
     setStartTime(Date.now())
+    setQuizStarted(false)
+    setCurrentQuiz(null)
   }
 
   const getDifficultyColor = (difficulty: string) => {
@@ -171,6 +213,163 @@ export default function QuizPage() {
     if (fileType?.includes("ppt")) return <Presentation className="w-4 h-4 text-orange-500" />
     if (fileType?.includes("image")) return <ImageIcon className="w-4 h-4 text-green-500" />
     return <File className="w-4 h-4 text-gray-500" />
+  }
+
+  const generateQuiz = async () => {
+    if (!selectedMaterial) {
+      return
+    }
+
+    setIsGeneratingQuiz(true)
+    try {
+      const response = await fetch("/api/quiz", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          documentId: selectedMaterial,
+          difficulty: quizDifficulty,
+          questionCount: Number.parseInt(questionCount),
+        }),
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        if (data.success) {
+          setCurrentQuiz(data.quiz)
+          setQuestions(data.quiz.questions)
+          setQuizStarted(true)
+          setCurrentQuestionIndex(0)
+          setSelectedAnswer(null)
+          setShowResult(false)
+          setQuizResults([])
+          setQuizCompleted(false)
+          setStartTime(Date.now())
+        }
+      } else {
+        console.error("Failed to generate quiz")
+      }
+    } catch (error) {
+      console.error("Quiz generation error:", error)
+    } finally {
+      setIsGeneratingQuiz(false)
+    }
+  }
+
+  if (!quizStarted) {
+    return (
+      <div className="flex gap-6">
+        <div className="w-80 space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-lg">Available Materials</CardTitle>
+              <CardDescription>Your uploaded study materials</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {materialsLoading ? (
+                <div className="space-y-2">
+                  {[1, 2, 3].map((i) => (
+                    <div key={i} className="h-12 bg-gray-100 dark:bg-gray-800 rounded animate-pulse" />
+                  ))}
+                </div>
+              ) : availableMaterials.length > 0 ? (
+                <div className="space-y-2">
+                  {availableMaterials.map((material) => (
+                    <div
+                      key={material.id}
+                      className={`flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer ${
+                        selectedMaterial === material.id ? "border-primary bg-primary/5" : ""
+                      }`}
+                      onClick={() => setSelectedMaterial(material.id)}
+                    >
+                      {getFileIcon(material.file_type)}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{material.title || material.file_name}</p>
+                        <p className="text-xs text-gray-500 capitalize">{material.file_type}</p>
+                      </div>
+                      <Badge variant={material.status === "ready" ? "default" : "secondary"} className="text-xs">
+                        {material.status}
+                      </Badge>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-500">
+                  <FileText className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                  <p className="text-sm">No materials uploaded yet</p>
+                  <p className="text-xs mt-1">Upload study materials to generate quizzes</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="flex-1 space-y-6">
+          <div>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">Quiz Generator</h1>
+            <p className="text-gray-600 dark:text-gray-300">Generate AI-powered quizzes from your study materials</p>
+          </div>
+
+          <Card className="max-w-2xl mx-auto">
+            <CardHeader>
+              <CardTitle className="text-xl">Create New Quiz</CardTitle>
+              <CardDescription>Select a material and customize your quiz settings</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Difficulty Level</Label>
+                  <Select value={quizDifficulty} onValueChange={setQuizDifficulty}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="easy">Easy</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="hard">Hard</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Number of Questions</Label>
+                  <Select value={questionCount} onValueChange={setQuestionCount}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="3">3 Questions</SelectItem>
+                      <SelectItem value="5">5 Questions</SelectItem>
+                      <SelectItem value="10">10 Questions</SelectItem>
+                      <SelectItem value="15">15 Questions</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <Button onClick={generateQuiz} disabled={!selectedMaterial || isGeneratingQuiz} className="w-full">
+                {isGeneratingQuiz ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Generating Quiz...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Generate Quiz
+                  </>
+                )}
+              </Button>
+
+              {!selectedMaterial && (
+                <p className="text-sm text-gray-500 text-center">
+                  Please select a material from the sidebar to generate a quiz
+                </p>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    )
   }
 
   if (quizCompleted) {
@@ -314,7 +513,10 @@ export default function QuizPage() {
                 {availableMaterials.map((material) => (
                   <div
                     key={material.id}
-                    className="flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+                    className={`flex items-center gap-3 p-3 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors cursor-pointer ${
+                      selectedMaterial === material.id ? "border-primary bg-primary/5" : ""
+                    }`}
+                    onClick={() => setSelectedMaterial(material.id)}
                   >
                     {getFileIcon(material.file_type)}
                     <div className="flex-1 min-w-0">

@@ -1,37 +1,7 @@
 import type { CollectionAfterChangeHook, CollectionAfterDeleteHook } from "payload"
-import { revalidateTag, revalidatePath } from "next/cache"
-import type { Flashcard } from "@/payload-types"
+import { revalidatePath } from "next/cache"
 
-// After a flashcard is created or updated
-export const afterFlashcardChange: CollectionAfterChangeHook<Flashcard> = ({
-  doc,
-  previousDoc,
-  req: { payload, context },
-}) => {
-  payload.logger.info(`Flashcard ${doc.id} updated by user ${doc.user}`)
-
-  if (!context.disableRevalidate) {
-    revalidateTag("flashcards-cache")
-  }
-
-  if (previousDoc && previousDoc.mastered !== doc.mastered) {
-    payload.logger.info(`Flashcard ${doc.id} mastered status changed: ${previousDoc.mastered} -> ${doc.mastered}`)
-  }
-
-  return doc
-}
-
-// After a flashcard is deleted
-export const afterFlashcardDelete: CollectionAfterDeleteHook<Flashcard> = ({ doc, req: { payload, context } }) => {
-  payload.logger.info(`Flashcard ${doc.id} deleted by user ${doc.user}`)
-
-  if (!context.disableRevalidate) {
-    revalidateTag("flashcards-cache")
-  }
-
-  return doc
-}
-
+// Conversation Hooks
 export const afterConversationChange: CollectionAfterChangeHook = ({ doc, previousDoc, req: { context } }) => {
   if (!context.disableRevalidate) {
     const path = `/chat/${doc.id}`
@@ -48,6 +18,7 @@ export const afterConversationDelete: CollectionAfterDeleteHook = ({ doc, req: {
   return doc
 }
 
+// Message Hooks
 export const afterMessageChange: CollectionAfterChangeHook = ({ doc, previousDoc, req: { context } }) => {
   if (!context.disableRevalidate) {
     const path = `/chat/${doc.conversation}`
