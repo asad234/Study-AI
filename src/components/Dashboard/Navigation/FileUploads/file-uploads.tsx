@@ -20,6 +20,9 @@ interface UploadedFile {
   file: File
 }
 
+// Add environment-aware file size limit
+const MAX_FILE_SIZE = process.env.NODE_ENV === 'production' ? 4 * 1024 * 1024 : 50 * 1024 * 1024
+
 export default function UploadPage() {
   const [files, setFiles] = useState<UploadedFile[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
@@ -52,13 +55,21 @@ export default function UploadPage() {
       formData.append("file", file.file)
       formData.append("title", file.name.split(".")[0])
 
+      // Add timeout to prevent hanging requests on Vercel
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 8000) // 8 second timeout
+
       const response = await fetch("/api/upload", {
         method: "POST",
         body: formData,
+        signal: controller.signal,
       })
 
+      clearTimeout(timeoutId)
+
       if (!response.ok) {
-        throw new Error("Upload failed")
+        const errorData = await response.json().catch(() => ({}))
+        throw new Error(errorData.error || `Upload failed (${response.status})`)
       }
 
       const result = await response.json()
@@ -75,13 +86,54 @@ export default function UploadPage() {
         })
       }, 2000)
     } catch (error) {
+      console.error("Upload error:", error)
       setFiles((prev) => prev.map((f) => (f.id === file.id ? { ...f, status: "error", progress: 0 } : f)))
+      
+      let errorMessage = "There was an error uploading your file. Please try again."
+      
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          errorMessage = "Upload timeout. Please try with a smaller file or check your connection."
+        } else if (error.message.includes('413') || error.message.includes('too large')) {
+          errorMessage = "File is too large. Please use a file smaller than 2MB."
+        } else if (error.message.includes('408')) {
+          errorMessage = "Upload timeout. Please try again with a smaller file."
+        } else {
+          errorMessage = error.message
+        }
+      }
+      
       toast({
         title: "Upload failed",
-        description: "There was an error uploading your file. Please try again.",
+        description: errorMessage,
         variant: "destructive",
       })
     }
+  }
+
+  const validateFile = (file: File): string | null => {
+    // Check file size
+    if (file.size > MAX_FILE_SIZE) {
+      const maxSizeMB = MAX_FILE_SIZE / (1024 * 1024)
+      return `File "${file.name}" is too large. Maximum size: ${maxSizeMB}MB`
+    }
+
+    // Check file type
+    const allowedTypes = [
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      "image/jpeg",
+      "image/png",
+      "image/gif",
+      "image/webp",
+    ]
+
+    if (!allowedTypes.includes(file.type)) {
+      return `File type "${file.type}" is not supported`
+    }
+
+    return null
   }
 
   const handleFileUpload = (uploadedFiles: FileList) => {
@@ -94,7 +146,30 @@ export default function UploadPage() {
       return
     }
 
-    const newFiles: UploadedFile[] = Array.from(uploadedFiles).map((file) => ({
+    const validFiles: File[] = []
+    const errors: string[] = []
+
+    Array.from(uploadedFiles).forEach((file) => {
+      const error = validateFile(file)
+      if (error) {
+        errors.push(error)
+      } else {
+        validFiles.push(file)
+      }
+    })
+
+    // Show validation errors
+    if (errors.length > 0) {
+      toast({
+        title: "Some files were rejected",
+        description: errors.join(". "),
+        variant: "destructive",
+      })
+    }
+
+    if (validFiles.length === 0) return
+
+    const newFiles: UploadedFile[] = validFiles.map((file) => ({
       id: Math.random().toString(36).substr(2, 9),
       name: file.name,
       size: file.size,
@@ -167,6 +242,8 @@ export default function UploadPage() {
         return ""
     }
   }
+
+  const maxFileSizeMB = MAX_FILE_SIZE / (1024 * 1024)
 
   return (
     <div className="space-y-6">
@@ -244,7 +321,7 @@ export default function UploadPage() {
                 <span className="cursor-pointer">Browse Files</span>
               </Button>
             </label>
-            <p className="text-xs text-gray-500 mt-2">Maximum file size: 50MB per file</p>
+            <p className="text-xs text-gray-500 mt-2">Maximum file size: {maxFileSizeMB}MB per file</p>
           </div>
         </CardContent>
       </Card>
@@ -288,7 +365,6 @@ export default function UploadPage() {
           </CardContent>
         </Card>
       )}
-
 
       {/* Next Steps */}
       {files.some((f) => f.status === "completed") && (
