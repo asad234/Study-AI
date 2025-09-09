@@ -30,9 +30,11 @@ import {
   Shield,
   ChevronUp,
   LogOut,
+  File
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { file } from "zod/v4"
 
 interface UserProfile {
   firstName: string // Changed from first_name to firstName to match API response
@@ -50,6 +52,11 @@ const navigationItems = [
     title: "Upload Files",
     url: "/dashboard/upload",
     icon: Upload,
+  },
+   {
+    title: "Projects",
+    url: "/dashboard/projects",
+    icon: File,
   },
 ]
 
