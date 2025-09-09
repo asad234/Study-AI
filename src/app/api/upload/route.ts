@@ -1,7 +1,7 @@
 import { type NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
 import { authOptions } from "@/lib/authoption"
-import { getPayloadHMR } from "@payloadcms/next/utilities"
+import { getPayload } from "payload"
 import configPromise from "@payload-config"
 
 export async function POST(request: NextRequest) {
@@ -12,7 +12,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    const payload = await getPayloadHMR({ config: configPromise })
+    const payload = await getPayload({ config: configPromise })
 
     // Get user's profile
     const profiles = await payload.find({
@@ -24,11 +24,22 @@ export async function POST(request: NextRequest) {
       },
     })
 
+    console.log("[v0] Upload - Found profiles:", profiles.docs.length)
+    if (profiles.docs.length > 0) {
+      console.log("[v0] Upload - User profile:", { id: profiles.docs[0].id, email: profiles.docs[0].email })
+    }
+
     if (profiles.docs.length === 0) {
       return NextResponse.json({ error: "Profile not found" }, { status: 404 })
     }
 
     const userProfile = profiles.docs[0]
+
+    if (!userProfile?.id) {
+      console.error("[v0] Upload - User profile missing ID:", userProfile)
+      return NextResponse.json({ error: "Invalid user profile" }, { status: 500 })
+    }
+
     const formData = await request.formData()
     const file = formData.get("file") as File
     const title = formData.get("title") as string
@@ -58,41 +69,83 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "File size too large" }, { status: 400 })
     }
 
+    console.log("[v0] Upload - File details:", { name: file.name, type: file.type, size: file.size })
+
     // Upload file to media collection
-    const mediaResult = await payload.create({
-      collection: "media",
-      data: {
-        alt: title || file.name,
-        description: `Uploaded by ${session.user.name || session.user.email}`,
-      },
-      file: {
-        data: Buffer.from(await file.arrayBuffer()),
-        mimetype: file.type,
-        name: file.name,
-        size: file.size,
-      },
-    })
+    console.log("[v0] Upload - Creating media record...")
+    let mediaResult
+    try {
+      mediaResult = await payload.create({
+        collection: "media",
+        data: {
+          alt: title || file.name,
+          description: `Uploaded by ${session.user.name || session.user.email}`,
+        },
+        file: {
+          data: Buffer.from(await file.arrayBuffer()),
+          mimetype: file.type,
+          name: file.name,
+          size: file.size,
+        },
+      })
+
+      console.log("[v0] Upload - Media created:", {
+        id: mediaResult && typeof mediaResult === "object" && "id" in mediaResult ? mediaResult.id : "undefined",
+        url: mediaResult && typeof mediaResult === "object" && "url" in mediaResult ? mediaResult.url : "undefined",
+      })
+    } catch (mediaError) {
+      console.error("[v0] Upload - Media creation error:", mediaError)
+      return NextResponse.json({ error: "Failed to upload file to media" }, { status: 500 })
+    }
+
+    if (!mediaResult || typeof mediaResult !== "object" || !("id" in mediaResult) || !mediaResult.id) {
+      console.error("[v0] Upload - Media creation failed, invalid result:", mediaResult)
+      return NextResponse.json({ error: "Failed to upload file" }, { status: 500 })
+    }
 
     // Create document record
-    const documentResult = await payload.create({
-      collection: "documents",
-      data: {
-        user: userProfile.id,
-        title: title || file.name.split(".")[0],
-        file_name: file.name,
-        file_path: mediaResult.url || "",
-        file_type: file.type,
-        file_size: file.size,
-        status: "ready",
-        processing_progress: 100,
-        metadata: {
-          originalName: file.name,
-          uploadedAt: new Date().toISOString(),
-          uploadedBy: session.user.email,
+    console.log("[v0] Upload - Creating document record...")
+    let documentResult
+    try {
+      documentResult = await payload.create({
+        collection: "documents",
+        data: {
+          user: userProfile.id,
+          title: title || file.name.split(".")[0],
+          file_name: file.name,
+          file_path: (mediaResult && "url" in mediaResult ? mediaResult.url : "") || "",
+          file_type: file.type,
+          file_size: file.size,
+          status: "ready",
+          processing_progress: 100,
+          metadata: {
+            originalName: file.name,
+            uploadedAt: new Date().toISOString(),
+            uploadedBy: session.user.email,
+          },
+          media_file: mediaResult.id,
         },
-        media_file: mediaResult.id,
-      },
-    })
+      })
+
+      console.log("[v0] Upload - Document created successfully:", {
+        id:
+          documentResult && typeof documentResult === "object" && "id" in documentResult
+            ? documentResult.id
+            : "undefined",
+        title:
+          documentResult && typeof documentResult === "object" && "title" in documentResult
+            ? documentResult.title
+            : "undefined",
+      })
+    } catch (documentError) {
+      console.error("[v0] Upload - Document creation error:", documentError)
+      return NextResponse.json({ error: "Failed to create document record" }, { status: 500 })
+    }
+
+    if (!documentResult || typeof documentResult !== "object" || !("id" in documentResult) || !documentResult.id) {
+      console.error("[v0] Upload - Document creation failed, invalid result:", documentResult)
+      return NextResponse.json({ error: "Failed to create document record" }, { status: 500 })
+    }
 
     return NextResponse.json({
       success: true,

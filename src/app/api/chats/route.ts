@@ -90,12 +90,11 @@ Available documents:
 ${documentContext}
 
 Instructions:
-- Answer questions based on the provided documents when possible
-- If information isn't in the documents, provide general educational help
-- Be encouraging and supportive
-- Suggest follow-up questions when appropriate
-- Keep responses concise but informative
-- Reference specific documents when relevant`
+- Give short, definition-style answers (1 to 2 sentences, like a glossary).
+- Be precise, clear, and complete in the response.
+- Use the uploaded documents as the main source; if not found, provide accurate general knowledge.
+- Reference specific documents when relevant.
+- Stay supportive and student-friendly.`
 
     const { text } = await generateText({
       model: openai("gpt-4o-mini"),

@@ -1,4 +1,4 @@
-import { buildConfig, PayloadRequest } from "payload"
+import { buildConfig, type PayloadRequest } from "payload"
 import { postgresAdapter } from "@payloadcms/db-postgres"
 import { lexicalEditor } from "@payloadcms/richtext-lexical"
 import path from "path"
@@ -20,8 +20,7 @@ import { Exams } from "@/collections/Exams/exams"
 import { ExamQuestions } from "@/collections/Exams/exam-questions"
 import { ExamAttempts } from "@/collections/Exams/exam-attempts"
 import { Media } from "@/collections/Media"
-
-
+import Projects from "@/collections/projects/route"
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -51,7 +50,24 @@ export default buildConfig({
     },
   }),
 
-  collections: [Users, Media, Pages, Categories, Posts,Profiles,Documents,Quizzes, Flashcards,QuizAttempts,Exams,ExamQuestions,ExamAttempts, ChatConversations, ChatMessages],
+  collections: [
+    Users,
+    Media,
+    Pages,
+    Categories,
+    Posts,
+    Profiles,
+    Documents,
+    Quizzes,
+    Flashcards,
+    QuizAttempts,
+    Exams,
+    ExamQuestions,
+    ExamAttempts,
+    ChatConversations,
+    ChatMessages,
+    Projects,
+  ],
 
   secret: process.env.PAYLOAD_SECRET || "",
 
@@ -64,7 +80,7 @@ export default buildConfig({
   },
 
   csrf: [
-    'https://study-rf1okjecj-asad234s-projects.vercel.app',
+    "https://study-rf1okjecj-asad234s-projects.vercel.app",
     process.env.NEXT_PUBLIC_SERVER_URL || "http://localhost:3000",
   ],
 

@@ -4,9 +4,36 @@ export const Documents: CollectionConfig = {
   slug: "documents",
   access: {
     create: ({ req: { user } }) => !!user,
-    read: ({ req: { user } }) => !!user,
-    update: ({ req: { user } }) => !!user,
-    delete: ({ req: { user } }) => !!user,
+    read: ({ req: { user } }) => {
+      if (user) {
+        return {
+          user: {
+            equals: user.id,
+          },
+        }
+      }
+      return false
+    },
+    update: ({ req: { user } }) => {
+      if (user) {
+        return {
+          user: {
+            equals: user.id,
+          },
+        }
+      }
+      return false
+    },
+    delete: ({ req: { user } }) => {
+      if (user) {
+        return {
+          user: {
+            equals: user.id,
+          },
+        }
+      }
+      return false
+    },
   },
   fields: [
     {
@@ -65,6 +92,11 @@ export const Documents: CollectionConfig = {
       name: "media_file",
       type: "relationship",
       relationTo: "media",
+    },
+    {
+      name: "project",
+      type: "relationship",
+      relationTo: "projects",
     },
   ],
   timestamps: true,
