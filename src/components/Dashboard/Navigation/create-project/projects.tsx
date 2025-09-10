@@ -4,7 +4,18 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
-import { FolderPlus, FileText, ArrowRight, Upload, CalendarIcon, X, Presentation, ImageIcon, File } from "lucide-react"
+import {
+  FolderPlus,
+  FileText,
+  ArrowRight,
+  Upload,
+  CalendarIcon,
+  X,
+  Presentation,
+  ImageIcon,
+  File,
+  Trash2,
+} from "lucide-react"
 import { useState, useEffect } from "react"
 import {
   Dialog,
@@ -59,6 +70,10 @@ export default function ProjectsPage() {
   const [loadingProject, setLoadingProject] = useState(false)
   const [projectFiles, setProjectFiles] = useState<File[]>([])
   const [uploadingFiles, setUploadingFiles] = useState(false)
+  const [deletingDocuments, setDeletingDocuments] = useState<Set<string>>(new Set())
+  const [deletingProjects, setDeletingProjects] = useState<Set<string>>(new Set())
+  const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState("")
 
   const fetchProjects = async () => {
     if (status !== "authenticated") return
@@ -318,6 +333,109 @@ export default function ProjectsPage() {
 
   const removeProjectFile = (index: number) => {
     setProjectFiles((prev) => prev.filter((_, i) => i !== index))
+  }
+
+  const deleteDocument = async (documentId: string) => {
+    if (!selectedProject) return
+
+    setDeletingDocuments((prev) => new Set(prev).add(documentId))
+
+    try {
+      const response = await fetch(`/api/documents/${documentId}`, {
+        method: "DELETE",
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        toast({
+          title: "Success!",
+          description: "Document deleted successfully",
+        })
+
+        const updatedDocuments = (selectedProject.documents || []).filter(
+          (doc: any) => doc.id !== Number.parseInt(documentId),
+        )
+
+        const updatedSelectedProject = {
+          ...selectedProject,
+          documents: updatedDocuments,
+          file_count: updatedDocuments.length,
+        }
+
+        setSelectedProject(updatedSelectedProject)
+
+        setProjects((prevProjects) =>
+          prevProjects.map((project) => (project.id === selectedProject.id ? updatedSelectedProject : project)),
+        )
+
+        // Refresh projects in background to sync with server
+        fetchProjects()
+      } else {
+        throw new Error(data.error || "Failed to delete document")
+      }
+    } catch (error) {
+      console.error("Error deleting document:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete document",
+        variant: "destructive",
+      })
+    } finally {
+      setDeletingDocuments((prev) => {
+        const newSet = new Set(prev)
+        newSet.delete(documentId)
+        return newSet
+      })
+    }
+  }
+
+  const deleteProject = async (projectId: string) => {
+    console.log("[v0] Delete project called with ID:", projectId)
+    setDeletingProjects((prev) => new Set(prev).add(projectId))
+
+    try {
+      console.log("[v0] Making DELETE request to:", `/api/projects/${projectId}`)
+      const response = await fetch(`/api/projects/${projectId}`, {
+        method: "DELETE",
+      })
+
+      console.log("[v0] Delete response status:", response.status)
+      const data = await response.json()
+      console.log("[v0] Delete response data:", data)
+
+      if (data.success) {
+        toast({
+          title: "Success!",
+          description: "Project deleted successfully",
+        })
+
+        // Refresh projects list
+        await fetchProjects()
+
+        // Close project detail modal if the deleted project was selected
+        if (selectedProject && selectedProject.id === projectId) {
+          setSelectedProject(null)
+        }
+      } else {
+        throw new Error(data.error || "Failed to delete project")
+      }
+    } catch (error) {
+      console.error("Error deleting project:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete project",
+        variant: "destructive",
+      })
+    } finally {
+      setDeletingProjects((prev) => {
+        const newSet = new Set(prev)
+        newSet.delete(projectId)
+        return newSet
+      })
+      setProjectToDelete(null)
+      setDeleteConfirmationText("")
+    }
   }
 
   const getFileIcon = (type: string) => {
@@ -629,7 +747,23 @@ export default function ProjectsPage() {
             <Card key={project.id} className="hover:shadow-lg transition-shadow">
               <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
                 <CardTitle className="text-xl font-bold">{project.name}</CardTitle>
-                <Badge variant={project.status === "completed" ? "default" : "secondary"}>{project.status}</Badge>
+                <div className="flex items-center gap-2">
+                  <Badge variant={project.status === "completed" ? "default" : "secondary"}>{project.status}</Badge>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setProjectToDelete(project)}
+                    disabled={deletingProjects.has(project.id)}
+                    className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
+                    title="Delete project"
+                  >
+                    {deletingProjects.has(project.id) ? (
+                      <div className="w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <Trash2 className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
               </CardHeader>
               <CardContent>
                 <CardDescription className="mb-4">{project.description}</CardDescription>
@@ -792,8 +926,10 @@ export default function ProjectsPage() {
 
                     {selectedProject.documents && selectedProject.documents.length > 0 ? (
                       <div className="space-y-4">
-                        <h4 className="text-sm font-medium">Uploaded Documents ({selectedProject.documents.length})</h4>
-                        {selectedProject.documents.map((doc: Document, index: number) => (
+                        <h4 className="text-sm font-medium">
+                          Uploaded Documents ({selectedProject.documents?.length || 0})
+                        </h4>
+                        {selectedProject.documents?.map((doc: Document, index: number) => (
                           <div
                             key={doc.id || index}
                             className="flex items-center justify-between p-3 border rounded-lg"
@@ -810,7 +946,23 @@ export default function ProjectsPage() {
                                 </p>
                               </div>
                             </div>
-                            <Badge variant={doc.status === "ready" ? "default" : "secondary"}>{doc.status}</Badge>
+                            <div className="flex items-center gap-2">
+                              <Badge variant={doc.status === "ready" ? "default" : "secondary"}>{doc.status}</Badge>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                onClick={() => deleteDocument(doc.id)}
+                                disabled={deletingDocuments.has(doc.id)}
+                                className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
+                                title="Delete document"
+                              >
+                                {deletingDocuments.has(doc.id) ? (
+                                  <div className="w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
+                                ) : (
+                                  <Trash2 className="w-4 h-4" />
+                                )}
+                              </Button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -824,6 +976,79 @@ export default function ProjectsPage() {
                   </div>
                 </CardContent>
               </Card>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {projectToDelete && (
+        <Dialog
+          open={!!projectToDelete}
+          onOpenChange={() => {
+            setProjectToDelete(null)
+            setDeleteConfirmationText("")
+          }}
+        >
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle className="text-red-600">Delete Project</DialogTitle>
+              <DialogDescription className="text-gray-600">
+                Are you sure you want to delete "{projectToDelete.name}"?
+              </DialogDescription>
+            </DialogHeader>
+            <div className="py-4">
+              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                <div className="flex items-start gap-3">
+                  <div className="w-6 h-6 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
+                    <Trash2 className="w-3 h-3 text-red-600" />
+                  </div>
+                  <div>
+                    <h4 className="font-medium text-red-800 mb-1">This action cannot be undone</h4>
+                    <p className="text-sm text-red-700">
+                      This will permanently delete all data associated with this project, including:
+                    </p>
+                    <ul className="text-sm text-red-700 mt-2 ml-4 list-disc">
+                      <li>All uploaded documents ({projectToDelete.file_count} files)</li>
+                      <li>Project settings and progress</li>
+                      <li>Generated flashcards and quizzes</li>
+                      <li>Chat history and AI interactions</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+              <p className="text-sm text-gray-600">
+                Type the project name <strong>"{projectToDelete.name}"</strong> to confirm deletion:
+              </p>
+              <Input
+                className="mt-2"
+                placeholder={`Type "${projectToDelete.name}" to confirm`}
+                value={deleteConfirmationText}
+                onChange={(e) => {
+                  console.log("[v0] Confirmation text changed:", e.target.value)
+                  setDeleteConfirmationText(e.target.value)
+                }}
+              />
+            </div>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setProjectToDelete(null)
+                  setDeleteConfirmationText("")
+                }}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  console.log("[v0] Delete button clicked for project:", projectToDelete.name)
+                  deleteProject(projectToDelete.id)
+                }}
+                disabled={deleteConfirmationText !== projectToDelete.name}
+              >
+                Delete Project
+              </Button>
             </div>
           </DialogContent>
         </Dialog>

@@ -75,27 +75,66 @@ export async function POST(request: NextRequest) {
     console.log("[v0] Upload - Creating media record...")
     let mediaResult
     try {
-      mediaResult = await payload.create({
-        collection: "media",
-        data: {
-          alt: title || file.name,
-          description: `Uploaded by ${session.user.name || session.user.email}`,
-        },
-        file: {
-          data: Buffer.from(await file.arrayBuffer()),
-          mimetype: file.type,
-          name: file.name,
-          size: file.size,
-        },
-      })
+      let retryCount = 0
+      const maxRetries = 3
 
-      console.log("[v0] Upload - Media created:", {
-        id: mediaResult && typeof mediaResult === "object" && "id" in mediaResult ? mediaResult.id : "undefined",
-        url: mediaResult && typeof mediaResult === "object" && "url" in mediaResult ? mediaResult.url : "undefined",
+      while (retryCount < maxRetries) {
+        try {
+          mediaResult = await payload.create({
+            collection: "media",
+            data: {
+              alt: title || file.name,
+              description: `Uploaded by ${session.user.name || session.user.email}`,
+            },
+            file: {
+              data: Buffer.from(await file.arrayBuffer()),
+              mimetype: file.type,
+              name: file.name,
+              size: file.size,
+            },
+          })
+          break // Success, exit retry loop
+        } catch (retryError: any) {
+          retryCount++
+          console.error(`[v0] Upload - Media creation attempt ${retryCount} failed:`, retryError)
+
+          // Check if it's a database connection error
+          if (retryError?.code === "XX000" || retryError?.message?.includes("db_termination")) {
+            if (retryCount < maxRetries) {
+              console.log(`[v0] Upload - Retrying media creation (${retryCount}/${maxRetries})...`)
+              await new Promise((resolve) => setTimeout(resolve, 1000 * retryCount)) // Exponential backoff
+              continue
+            }
+          }
+          throw retryError // Re-throw if not a connection error or max retries reached
+        }
+      }
+
+      if (!mediaResult) {
+        throw new Error("Media creation returned null/undefined result")
+      }
+
+      if (typeof mediaResult !== "object") {
+        throw new Error(`Media creation returned invalid type: ${typeof mediaResult}`)
+      }
+
+      if (!("id" in mediaResult) || !mediaResult.id) {
+        throw new Error(`Media creation returned object without valid id: ${JSON.stringify(mediaResult)}`)
+      }
+
+      console.log("[v0] Upload - Media created successfully:", {
+        id: mediaResult.id,
+        url: "url" in mediaResult ? mediaResult.url : "undefined",
       })
     } catch (mediaError) {
       console.error("[v0] Upload - Media creation error:", mediaError)
-      return NextResponse.json({ error: "Failed to upload file to media" }, { status: 500 })
+      return NextResponse.json(
+        {
+          error: "Failed to upload file to media",
+          details: mediaError instanceof Error ? mediaError.message : "Unknown error",
+        },
+        { status: 500 },
+      )
     }
 
     if (!mediaResult || typeof mediaResult !== "object" || !("id" in mediaResult) || !mediaResult.id) {
@@ -107,39 +146,72 @@ export async function POST(request: NextRequest) {
     console.log("[v0] Upload - Creating document record...")
     let documentResult
     try {
-      documentResult = await payload.create({
-        collection: "documents",
-        data: {
-          user: userProfile.id,
-          title: title || file.name.split(".")[0],
-          file_name: file.name,
-          file_path: (mediaResult && "url" in mediaResult ? mediaResult.url : "") || "",
-          file_type: file.type,
-          file_size: file.size,
-          status: "ready",
-          processing_progress: 100,
-          metadata: {
-            originalName: file.name,
-            uploadedAt: new Date().toISOString(),
-            uploadedBy: session.user.email,
-          },
-          media_file: mediaResult.id,
-        },
-      })
+      let retryCount = 0
+      const maxRetries = 3
+
+      while (retryCount < maxRetries) {
+        try {
+          documentResult = await payload.create({
+            collection: "documents",
+            data: {
+              user: userProfile.id,
+              title: title || file.name.split(".")[0],
+              file_name: file.name,
+              file_path: ("url" in mediaResult ? mediaResult.url : "") || "",
+              file_type: file.type,
+              file_size: file.size,
+              status: "ready",
+              processing_progress: 100,
+              metadata: {
+                originalName: file.name,
+                uploadedAt: new Date().toISOString(),
+                uploadedBy: session.user.email,
+              },
+              media_file: mediaResult.id,
+            },
+          })
+          break // Success, exit retry loop
+        } catch (retryError: any) {
+          retryCount++
+          console.error(`[v0] Upload - Document creation attempt ${retryCount} failed:`, retryError)
+
+          // Check if it's a database connection error
+          if (retryError?.code === "XX000" || retryError?.message?.includes("db_termination")) {
+            if (retryCount < maxRetries) {
+              console.log(`[v0] Upload - Retrying document creation (${retryCount}/${maxRetries})...`)
+              await new Promise((resolve) => setTimeout(resolve, 1000 * retryCount)) // Exponential backoff
+              continue
+            }
+          }
+          throw retryError // Re-throw if not a connection error or max retries reached
+        }
+      }
+
+      if (!documentResult) {
+        throw new Error("Document creation returned null/undefined result")
+      }
+
+      if (typeof documentResult !== "object") {
+        throw new Error(`Document creation returned invalid type: ${typeof documentResult}`)
+      }
+
+      if (!("id" in documentResult) || !documentResult.id) {
+        throw new Error(`Document creation returned object without valid id: ${JSON.stringify(documentResult)}`)
+      }
 
       console.log("[v0] Upload - Document created successfully:", {
-        id:
-          documentResult && typeof documentResult === "object" && "id" in documentResult
-            ? documentResult.id
-            : "undefined",
-        title:
-          documentResult && typeof documentResult === "object" && "title" in documentResult
-            ? documentResult.title
-            : "undefined",
+        id: documentResult.id,
+        title: "title" in documentResult ? documentResult.title : "undefined",
       })
     } catch (documentError) {
       console.error("[v0] Upload - Document creation error:", documentError)
-      return NextResponse.json({ error: "Failed to create document record" }, { status: 500 })
+      return NextResponse.json(
+        {
+          error: "Failed to create document record",
+          details: documentError instanceof Error ? documentError.message : "Unknown error",
+        },
+        { status: 500 },
+      )
     }
 
     if (!documentResult || typeof documentResult !== "object" || !("id" in documentResult) || !documentResult.id) {
