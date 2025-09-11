@@ -17,6 +17,7 @@ import {
   Check,
   AlertTriangle
 } from 'lucide-react';
+import UnderDevelopmentBanner from '@/components/common/underDevelopment';
 
 interface PrivacySection {
   id: string;
@@ -125,6 +126,7 @@ export default function PrivacyPolicyPage() {
       <div className="max-w-6xl mx-auto">
         {/* Header */}
         <div className="text-center mb-8">
+          <UnderDevelopmentBanner/>
           <div className="mx-auto mb-4 w-16 h-16 bg-blue-100 dark:bg-blue-900/50 rounded-full flex items-center justify-center">
             <Shield className="w-8 h-8 text-blue-600 dark:text-blue-400" />
           </div>

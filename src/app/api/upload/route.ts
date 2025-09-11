@@ -24,9 +24,9 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    console.log("[v0] Upload - Found profiles:", profiles.docs.length)
+    console.log("Upload - Found profiles:", profiles.docs.length)
     if (profiles.docs.length > 0) {
-      console.log("[v0] Upload - User profile:", { id: profiles.docs[0].id, email: profiles.docs[0].email })
+      console.log("Upload - User profile:", { id: profiles.docs[0].id, email: profiles.docs[0].email })
     }
 
     if (profiles.docs.length === 0) {
@@ -36,7 +36,7 @@ export async function POST(request: NextRequest) {
     const userProfile = profiles.docs[0]
 
     if (!userProfile?.id) {
-      console.error("[v0] Upload - User profile missing ID:", userProfile)
+      console.error("Upload - User profile missing ID:", userProfile)
       return NextResponse.json({ error: "Invalid user profile" }, { status: 500 })
     }
 
@@ -69,10 +69,10 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "File size too large" }, { status: 400 })
     }
 
-    console.log("[v0] Upload - File details:", { name: file.name, type: file.type, size: file.size })
+    console.log("Upload - File details:", { name: file.name, type: file.type, size: file.size })
 
     // Upload file to media collection
-    console.log("[v0] Upload - Creating media record...")
+    console.log("Upload - Creating media record...")
     let mediaResult
     try {
       let retryCount = 0
@@ -96,12 +96,12 @@ export async function POST(request: NextRequest) {
           break // Success, exit retry loop
         } catch (retryError: any) {
           retryCount++
-          console.error(`[v0] Upload - Media creation attempt ${retryCount} failed:`, retryError)
+          console.error(`Upload - Media creation attempt ${retryCount} failed:`, retryError)
 
           // Check if it's a database connection error
           if (retryError?.code === "XX000" || retryError?.message?.includes("db_termination")) {
             if (retryCount < maxRetries) {
-              console.log(`[v0] Upload - Retrying media creation (${retryCount}/${maxRetries})...`)
+              console.log(`Upload - Retrying media creation (${retryCount}/${maxRetries})...`)
               await new Promise((resolve) => setTimeout(resolve, 1000 * retryCount)) // Exponential backoff
               continue
             }
@@ -122,12 +122,12 @@ export async function POST(request: NextRequest) {
         throw new Error(`Media creation returned object without valid id: ${JSON.stringify(mediaResult)}`)
       }
 
-      console.log("[v0] Upload - Media created successfully:", {
+      console.log("Upload - Media created successfully:", {
         id: mediaResult.id,
         url: "url" in mediaResult ? mediaResult.url : "undefined",
       })
     } catch (mediaError) {
-      console.error("[v0] Upload - Media creation error:", mediaError)
+      console.error("Upload - Media creation error:", mediaError)
       return NextResponse.json(
         {
           error: "Failed to upload file to media",
@@ -138,12 +138,12 @@ export async function POST(request: NextRequest) {
     }
 
     if (!mediaResult || typeof mediaResult !== "object" || !("id" in mediaResult) || !mediaResult.id) {
-      console.error("[v0] Upload - Media creation failed, invalid result:", mediaResult)
+      console.error("Upload - Media creation failed, invalid result:", mediaResult)
       return NextResponse.json({ error: "Failed to upload file" }, { status: 500 })
     }
 
     // Create document record
-    console.log("[v0] Upload - Creating document record...")
+    console.log("Upload - Creating document record...")
     let documentResult
     try {
       let retryCount = 0
@@ -173,12 +173,12 @@ export async function POST(request: NextRequest) {
           break // Success, exit retry loop
         } catch (retryError: any) {
           retryCount++
-          console.error(`[v0] Upload - Document creation attempt ${retryCount} failed:`, retryError)
+          console.error(`Upload - Document creation attempt ${retryCount} failed:`, retryError)
 
           // Check if it's a database connection error
           if (retryError?.code === "XX000" || retryError?.message?.includes("db_termination")) {
             if (retryCount < maxRetries) {
-              console.log(`[v0] Upload - Retrying document creation (${retryCount}/${maxRetries})...`)
+              console.log(`Upload - Retrying document creation (${retryCount}/${maxRetries})...`)
               await new Promise((resolve) => setTimeout(resolve, 1000 * retryCount)) // Exponential backoff
               continue
             }
@@ -199,12 +199,12 @@ export async function POST(request: NextRequest) {
         throw new Error(`Document creation returned object without valid id: ${JSON.stringify(documentResult)}`)
       }
 
-      console.log("[v0] Upload - Document created successfully:", {
+      console.log("Upload - Document created successfully:", {
         id: documentResult.id,
         title: "title" in documentResult ? documentResult.title : "undefined",
       })
     } catch (documentError) {
-      console.error("[v0] Upload - Document creation error:", documentError)
+      console.error("Upload - Document creation error:", documentError)
       return NextResponse.json(
         {
           error: "Failed to create document record",
@@ -215,7 +215,7 @@ export async function POST(request: NextRequest) {
     }
 
     if (!documentResult || typeof documentResult !== "object" || !("id" in documentResult) || !documentResult.id) {
-      console.error("[v0] Upload - Document creation failed, invalid result:", documentResult)
+      console.error("Upload - Document creation failed, invalid result:", documentResult)
       return NextResponse.json({ error: "Failed to create document record" }, { status: 500 })
     }
 

@@ -13,6 +13,7 @@ import { User, Mail, Bell, Shield, Trash2, Upload, Moon, Sun, Globe, Smartphone 
 import { useTheme } from "next-themes"
 import { useToast } from "@/hooks/use-toast"
 import Profile from "../Profile/profile"
+import UnderDevelopmentBanner from "@/components/common/underDevelopment"
 
 export default function SettingsPage() {
   const [profile, setProfile] = useState({
@@ -55,7 +56,7 @@ export default function SettingsPage() {
   const handleDeleteAccount = () => {
     toast({
       title: "Account deletion requested",
-      description: "Please check your email for confirmation instructions.",
+      description: "Please contact the Study AI support Team for confirmation instructions.",
       variant: "destructive",
     })
   }
@@ -75,6 +76,7 @@ export default function SettingsPage() {
           {/* Notification Settings */}
           <Card>
             <CardHeader>
+              <UnderDevelopmentBanner/>
               <CardTitle className="flex items-center gap-2">
                 <Bell className="w-5 h-5" />
                 Notifications
@@ -137,6 +139,7 @@ export default function SettingsPage() {
           {/* Privacy Settings */}
           <Card>
             <CardHeader>
+              <UnderDevelopmentBanner/>
               <CardTitle className="flex items-center gap-2">
                 <Shield className="w-5 h-5" />
                 Privacy & Security

@@ -30,7 +30,8 @@ import {
   Shield,
   ChevronUp,
   LogOut,
-  File
+  File,
+  Lightbulb
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -81,6 +82,11 @@ const studyTools = [
     url: "/dashboard/exam",
     icon: Brain,
   },
+  {
+    title: "FlashcardsPage",
+    url: "/dashboard/flash-cards",
+    icon: BookOpen,
+  },
 ]
 
 const accountItems = [
@@ -103,6 +109,11 @@ const accountItems = [
     title: "Privacy",
     url: "/dashboard/privacy",
     icon: Shield,
+  },
+  {
+    title: "Feature Request",
+    url: "/dashboard/request",
+    icon: Lightbulb,
   },
 ]
 

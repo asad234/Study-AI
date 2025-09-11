@@ -63,7 +63,7 @@ export async function GET(request: NextRequest) {
             file_count: number
           }
         } catch (error) {
-          console.error(`[v0] Error fetching documents for project ${project.id}:`, error)
+          console.error(`Error fetching documents for project ${project.id}:`, error)
           return {
             ...project,
             documents: [],
@@ -76,9 +76,9 @@ export async function GET(request: NextRequest) {
       }),
     )
 
-    console.log("[v0] Fetched projects count:", projectsWithDocuments.length)
+    console.log("Fetched projects count:", projectsWithDocuments.length)
     projectsWithDocuments.forEach((project, index) => {
-      console.log(`[v0] Project ${index}:`, {
+      console.log(`Project ${index}:`, {
         id: project.id,
         name: project.name,
         documents: project.documents.length,
@@ -104,10 +104,10 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    console.log("[v0] Received project data:", JSON.stringify(body, null, 2))
+    console.log("Received project data:", JSON.stringify(body, null, 2))
 
     const validatedData = CreateProjectSchema.parse(body)
-    console.log("[v0] Validation successful:", validatedData)
+    console.log("Validation successful:", validatedData)
 
     const payload = await getPayload({ config: configPromise })
 
@@ -126,10 +126,10 @@ export async function POST(request: NextRequest) {
     }
 
     const userProfile = profiles.docs[0]
-    console.log("[v0] User profile found:", { id: userProfile.id, email: userProfile.email })
+    console.log("User profile found:", { id: userProfile.id, email: userProfile.email })
 
     if (validatedData.document_ids && validatedData.document_ids.length > 0) {
-      console.log("[v0] Validating document IDs:", validatedData.document_ids)
+      console.log("Validating document IDs:", validatedData.document_ids)
 
       for (const docId of validatedData.document_ids) {
         try {
@@ -137,23 +137,23 @@ export async function POST(request: NextRequest) {
             collection: "documents",
             id: docId,
           })
-          console.log("[v0] Found document:", { id: document.id, user: document.user })
+          console.log("Found document:", { id: document.id, user: document.user })
 
           const documentUserId =
             typeof document.user === "object" && document.user !== null ? document.user.id : document.user
 
           if (documentUserId !== userProfile.id) {
-            console.log("[v0] Document access denied - user mismatch")
+            console.log("Document access denied - user mismatch")
             return NextResponse.json({ error: `Document ${docId} not found or access denied` }, { status: 403 })
           }
         } catch (docError) {
-          console.log("[v0] Document validation error:", docError)
+          console.log("Document validation error:", docError)
           return NextResponse.json({ error: `Document ${docId} not found` }, { status: 404 })
         }
       }
     }
 
-    console.log("[v0] Creating project without documents first...")
+    console.log("Creating project without documents first...")
     const projectData = {
       user: userProfile.id,
       name: validatedData.name,
@@ -166,27 +166,27 @@ export async function POST(request: NextRequest) {
       progress: 0,
       file_count: validatedData.document_ids?.length || 0,
     }
-    console.log("[v0] Project data to create:", JSON.stringify(projectData, null, 2))
+    console.log("Project data to create:", JSON.stringify(projectData, null, 2))
 
     const project = await payload.create({
       collection: "projects",
       data: projectData,
     })
 
-    console.log("[v0] Project created successfully:", JSON.stringify(project, null, 2))
+    console.log("Project created successfully:", JSON.stringify(project, null, 2))
 
     try {
       const verifyProject = await payload.findByID({
         collection: "projects",
         id: project.id,
       })
-      console.log("[v0] Project verification successful:", { id: verifyProject.id, name: verifyProject.name })
+      console.log("Project verification successful:", { id: verifyProject.id, name: verifyProject.name })
     } catch (verifyError) {
-      console.error("[v0] Project verification failed:", verifyError)
+      console.error("Project verification failed:", verifyError)
     }
 
     if (validatedData.document_ids && validatedData.document_ids.length > 0) {
-      console.log("[v0] Associating documents with project...")
+      console.log("Associating documents with project...")
       try {
         for (const docId of validatedData.document_ids) {
           await payload.update({
@@ -196,11 +196,11 @@ export async function POST(request: NextRequest) {
               project: project.id,
             },
           })
-          console.log("[v0] Associated document", docId, "with project", project.id)
+          console.log("Associated document", docId, "with project", project.id)
         }
-        console.log("[v0] All documents associated successfully")
+        console.log("All documents associated successfully")
       } catch (updateError) {
-        console.error("[v0] Error associating documents:", updateError)
+        console.error("Error associating documents:", updateError)
         // Don't fail the entire request if document association fails
       }
     }
@@ -210,9 +210,9 @@ export async function POST(request: NextRequest) {
       project: project,
     })
   } catch (error) {
-    console.error("[v0] Error creating project:", error)
+    console.error("Error creating project:", error)
     if (error instanceof Error && "issues" in error) {
-      console.log("[v0] Validation issues:", (error as any).issues)
+      console.log("Validation issues:", (error as any).issues)
     }
     return NextResponse.json({ error: "Failed to create project" }, { status: 500 })
   }

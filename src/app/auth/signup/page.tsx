@@ -82,17 +82,17 @@ export default function SignUpPage() {
         description: "Welcome to StudyAI. Signing you in...",
       })
 
-      console.log("[v0] Attempting to sign in after signup...")
+      console.log("Attempting to sign in after signup...")
       const signInResult = await signIn("credentials", {
         email: formData.email,
         password: formData.password,
         redirect: false,
       })
 
-      console.log("[v0] Sign in result:", signInResult)
+      console.log("Sign in result:", signInResult)
 
       if (signInResult?.error) {
-        console.error("[v0] Sign in failed:", signInResult.error)
+        console.error("Sign in failed:", signInResult.error)
         toast({
           title: "Account created but sign in failed",
           description: "Please sign in manually.",
@@ -100,11 +100,11 @@ export default function SignUpPage() {
         })
         router.push("/auth/signin")
       } else {
-        console.log("[v0] Sign in successful, redirecting to dashboard...")
+        console.log("Sign in successful, redirecting to dashboard...")
         router.push("/dashboard")
       }
     } catch (err: any) {
-      console.error("[v0] Signup error:", err)
+      console.error("Signup error:", err)
       toast({
         title: "Error",
         description: err.message || "Something went wrong",

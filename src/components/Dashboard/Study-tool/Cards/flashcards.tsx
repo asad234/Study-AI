@@ -103,15 +103,15 @@ export default function FlashcardsPage() {
     setGeneratingCards(true)
 
     try {
-      console.log("[v0] Starting flashcard generation...")
-      console.log("[v0] Ready materials:", readyMaterials)
-      console.log("[v0] Using document ID:", readyMaterials[0].id)
+      console.log("Starting flashcard generation...")
+      console.log("Ready materials:", readyMaterials)
+      console.log("Using document ID:", readyMaterials[0].id)
 
       const requestBody = {
         subject: "Mixed",
         documentId: readyMaterials[0].id,
       }
-      console.log("[v0] Request body:", requestBody)
+      console.log("Request body:", requestBody)
 
       const response = await fetch("/api/flashcards", {
         method: "POST",
@@ -119,24 +119,24 @@ export default function FlashcardsPage() {
         body: JSON.stringify(requestBody),
       })
 
-      console.log("[v0] Response status:", response.status)
-      console.log("[v0] Response ok:", response.ok)
+      console.log("Response status:", response.status)
+      console.log("Response ok:", response.ok)
 
       const data = await response.json()
-      console.log("[v0] Response data:", data)
+      console.log("Response data:", data)
 
       if (data.success && Array.isArray(data.flashcards)) {
-        console.log("[v0] Successfully generated flashcards:", data.flashcards.length)
+        console.log("Successfully generated flashcards:", data.flashcards.length)
         await fetchFlashcards()
         setCurrentCardIndex(0)
         setIsFlipped(false)
       } else {
         console.error("Failed to generate flashcards:", data.error)
-        console.error("[v0] Full error response:", data)
+        console.error("Full error response:", data)
       }
     } catch (error) {
       console.error("Failed to generate flashcards:", error)
-      console.error("[v0] Network or parsing error:", error)
+      console.error("Network or parsing error:", error)
     } finally {
       setGeneratingCards(false)
     }
