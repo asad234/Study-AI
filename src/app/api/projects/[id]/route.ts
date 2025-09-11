@@ -32,7 +32,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const userProfile = profiles.docs[0]
 
-    console.log("[v0] Looking for project with ID:", id)
+    console.log(" Looking for project with ID:", id)
 
     const project = await payload.findByID({
       collection: "projects",
@@ -40,12 +40,12 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       depth: 2,
     })
 
-    console.log("[v0] Found project:", project ? `ID ${project.id}, user: ${project.user}` : "Not found")
-    console.log("[v0] Current user profile ID:", userProfile.id)
+    console.log("Found project:", project ? `ID ${project.id}, user: ${project.user}` : "Not found")
+    console.log("Current user profile ID:", userProfile.id)
 
     const projectUserId = typeof project.user === "object" && project.user !== null ? project.user.id : project.user
     if (projectUserId !== userProfile.id) {
-      console.log("[v0] Access denied - user mismatch")
+      console.log("Access denied - user mismatch")
       return NextResponse.json({ error: "Project not found" }, { status: 404 })
     }
 
@@ -89,8 +89,8 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
 
     const userProfile = profiles.docs[0]
 
-    console.log("[v0] Updating project with ID:", id)
-    console.log("[v0] Update data:", validatedData)
+    console.log("Updating project with ID:", id)
+    console.log("Update data:", validatedData)
 
     const existingProject = await payload.findByID({
       collection: "projects",
@@ -99,7 +99,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     })
 
     console.log(
-      "[v0] Existing project found:",
+      "Existing project found:",
       existingProject ? `ID ${existingProject.id}, user: ${existingProject.user}` : "Not found",
     )
 
@@ -108,12 +108,12 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         ? existingProject.user.id
         : existingProject.user
     if (projectUserId !== userProfile.id) {
-      console.log("[v0] Update access denied - user mismatch")
+      console.log("Update access denied - user mismatch")
       return NextResponse.json({ error: "Project not found" }, { status: 404 })
     }
 
     if (validatedData.document_ids && validatedData.document_ids.length > 0) {
-      console.log("[v0] Adding documents to project:", validatedData.document_ids)
+      console.log("Adding documents to project:", validatedData.document_ids)
 
       // Verify all documents belong to the user
       for (const documentId of validatedData.document_ids) {
@@ -126,13 +126,13 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
           const docUserId =
             typeof document.user === "object" && document.user !== null ? document.user.id : document.user
           if (docUserId !== userProfile.id) {
-            console.error("[v0] Document", documentId, "does not belong to user")
+            console.error("Document", documentId, "does not belong to user")
             return NextResponse.json({ error: "Document access denied" }, { status: 403 })
           }
 
-          console.log("[v0] Verified document", documentId, "belongs to user")
+          console.log("Verified document", documentId, "belongs to user")
         } catch (docError) {
-          console.error("[v0] Failed to verify document", documentId, ":", docError)
+          console.error("Failed to verify document", documentId, ":", docError)
           return NextResponse.json({ error: "Document not found" }, { status: 404 })
         }
       }
@@ -144,9 +144,9 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       const newDocIds = validatedData.document_ids.map((id) => id.toString())
       const combinedDocIds = [...new Set([...existingDocIds, ...newDocIds])]
 
-      console.log("[v0] Existing documents:", existingDocIds)
-      console.log("[v0] New documents:", newDocIds)
-      console.log("[v0] Combined documents:", combinedDocIds)
+      console.log("Existing documents:", existingDocIds)
+      console.log("New documents:", newDocIds)
+      console.log("Combined documents:", combinedDocIds)
 
       try {
         const documentIdsAsNumbers = combinedDocIds.map((id) => {
@@ -157,7 +157,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
           return numId
         })
 
-        console.log("[v0] Document IDs as numbers:", documentIdsAsNumbers)
+        console.log("Document IDs as numbers:", documentIdsAsNumbers)
 
         const updatedProject = await payload.update({
           collection: "projects",
@@ -169,7 +169,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         })
 
         console.log(
-          "[v0] Project updated successfully:",
+          "Project updated successfully:",
           updatedProject.id,
           "with",
           documentIdsAsNumbers.length,
@@ -181,7 +181,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
           project: updatedProject,
         })
       } catch (updateError) {
-        console.error("[v0] Error updating project with documents:", updateError)
+        console.error("Error updating project with documents:", updateError)
         return NextResponse.json({ error: "Failed to associate documents with project" }, { status: 500 })
       }
     } else {
@@ -192,7 +192,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
         data: validatedData,
       })
 
-      console.log("[v0] Project updated successfully:", project.id)
+      console.log("Project updated successfully:", project.id)
 
       return NextResponse.json({
         success: true,

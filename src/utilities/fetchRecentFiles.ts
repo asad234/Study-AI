@@ -18,9 +18,9 @@ export const fetchRecentFiles = async (
     const response = await fetch("/api/documents")
     if (response.ok) {
       const data = await response.json()
-      console.log("[v0] API response:", data)
+      console.log("API response:", data)
       const documents = data.documents || []
-      console.log("[v0] Documents array:", documents)
+      console.log("Documents array:", documents)
       setRecentFiles(documents.slice(0, 3)) // Show only 3 most recent
     }
   } catch (error) {

@@ -1,14 +1,16 @@
 "use client"
 
 import type React from "react"
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
-import { Upload, FileText, ImageIcon, Presentation, File, X, CheckCircle, AlertCircle, Loader2 } from "lucide-react"
+import { Upload, FileText, ImageIcon, Presentation, File, X, CheckCircle, AlertCircle, Loader2, Plus } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { useSession } from "next-auth/react"
+import { DialogTrigger } from "@/components/ui/dialog"
+import { fetchRecentFiles } from "@/utilities/fetchRecentFiles"
 
 interface UploadedFile {
   id: string
@@ -20,11 +22,32 @@ interface UploadedFile {
   file: File
 }
 
+interface Document {
+  id: string
+  title: string
+  file_name: string
+  file_type: string
+  status: string
+  createdAt: string
+}
+
+interface UserProfile {
+  firstName: string
+  lastName: string
+  email: string
+  bio?: string
+  location?: string
+}
+
 export default function UploadPage() {
   const [files, setFiles] = useState<UploadedFile[]>([])
   const [isDragOver, setIsDragOver] = useState(false)
   const { toast } = useToast()
+  const [recentFiles, setRecentFiles] = useState<Document[]>([])
+  const [loading, setLoading] = useState(true)
+  const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const { data: session } = useSession()
+
 
   const getFileIcon = (type: string) => {
     if (type.includes("pdf")) return <FileText className="w-6 h-6 text-red-500" />
@@ -168,6 +191,36 @@ export default function UploadPage() {
     }
   }
 
+ useEffect(() => {
+    const fetchUserProfile = async () => {
+      if (!session?.user?.email) return
+
+      try {
+        const response = await fetch("/api/profile")
+        if (response.ok) {
+          const profile = await response.json()
+          setUserProfile(profile)
+        }
+      } catch (error) {
+        console.error("Failed to fetch user profile:", error)
+      }
+    }
+
+    fetchRecentFiles(setRecentFiles, setLoading, session?.user?.email)
+    fetchUserProfile()
+  }, [session])
+
+  const formatUploadTime = (dateString: string) => {
+    const date = new Date(dateString)
+    const now = new Date()
+    const diffInHours = Math.floor((now.getTime() - date.getTime()) / (1000 * 60 * 60))
+
+    if (diffInHours < 1) return "Just now"
+    if (diffInHours < 24) return `${diffInHours} hours ago`
+    const diffInDays = Math.floor(diffInHours / 24)
+    return `${diffInDays} days ago`
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -288,6 +341,39 @@ export default function UploadPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Recent Files */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <FileText className="w-5 h-5" />
+                Recent Files
+              </CardTitle>
+              <CardDescription>Your recently uploaded study materials</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {loading ? (
+                <div className="text-center py-4 text-gray-500">Loading your files...</div>
+              ) : recentFiles.length > 0 ? (
+                recentFiles.map((file, index) => (
+                  <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-primary/10 rounded flex items-center justify-center">
+                        <FileText className="w-4 h-4 text-primary" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm">{file.title || file.file_name}</p>
+                        <p className="text-xs text-gray-500">{formatUploadTime(file.createdAt)}</p>
+                      </div>
+                    </div>
+                    <Badge variant={file.status === "ready" ? "default" : "secondary"}>{file.status}</Badge>
+                  </div>
+                ))
+              ) : (
+                <div className="text-center py-4 text-gray-500">No files uploaded yet. Create your first project!</div>
+              )}
+            </CardContent>
+          </Card>
 
       {/* Next Steps */}
       {files.some((f) => f.status === "completed") && (

@@ -43,6 +43,8 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
 import { useToast } from "@/hooks/use-toast"
+import FeedbackForm from "@/components/common/feedback"
+import Invitations from "@/components/common/invatations"
 
 interface Document {
   id: string
@@ -356,93 +358,16 @@ export default function DashboardPage() {
             </Card>
           </Link>
         </div>
-
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="gap-6">
           {/* Recent Files */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="w-5 h-5" />
-                Recent Files
-              </CardTitle>
-              <CardDescription>Your recently uploaded study materials</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              {loading ? (
-                <div className="text-center py-4 text-gray-500">Loading your files...</div>
-              ) : recentFiles.length > 0 ? (
-                recentFiles.map((file, index) => (
-                  <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-primary/10 rounded flex items-center justify-center">
-                        <FileText className="w-4 h-4 text-primary" />
-                      </div>
-                      <div>
-                        <p className="font-medium text-sm">{file.title || file.file_name}</p>
-                        <p className="text-xs text-gray-500">{formatUploadTime(file.createdAt)}</p>
-                      </div>
-                    </div>
-                    <Badge variant={file.status === "ready" ? "default" : "secondary"}>{file.status}</Badge>
-                  </div>
-                ))
-              ) : (
-                <div className="text-center py-4 text-gray-500">No files uploaded yet. Create your first project!</div>
-              )}
-              <DialogTrigger asChild>
-                <Button variant="outline" className="w-full bg-transparent">
-                  <Plus className="w-4 h-4 mr-2" />
-                  Create New Project
-                </Button>
-              </DialogTrigger>
-            </CardContent>
-          </Card>
-
-          {/* Study Progress */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <TrendingUp className="w-5 h-5" />
-                Study Progress
-              </CardTitle>
-              <CardDescription>Your learning progress this week</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Weekly Goal</span>
-                  <span>7/10 sessions</span>
-                </div>
-                <Progress value={70} className="h-2" />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Cards Mastered</span>
-                  <span>156/200</span>
-                </div>
-                <Progress value={78} className="h-2" />
-              </div>
-
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Quiz Accuracy</span>
-                  <span>87%</span>
-                </div>
-                <Progress value={87} className="h-2" />
-              </div>
-
-              <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                <Award className="w-5 h-5 text-green-600" />
-                <div>
-                  <p className="text-sm font-medium text-green-800 dark:text-green-200">Great progress!</p>
-                  <p className="text-xs text-green-600 dark:text-green-400">
-                    You&apos;re on track to meet your weekly goal
-                  </p>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
+            <FeedbackForm/>
         </div>
+        <div className="gap-6">
+          {/* Study Progress */}
+          <Invitations/>
+        </div>
+      </div>
       </div>
 
       <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
