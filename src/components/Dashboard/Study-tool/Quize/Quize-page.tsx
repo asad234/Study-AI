@@ -15,6 +15,7 @@ import {
   Trash2,
   Sparkles,
   Plus,
+  HelpCircle,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -22,10 +23,12 @@ import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { toast } from "@/components/ui/use-toast"
 import { useSession } from "next-auth/react"
-import ManualFlashCardCreator from "./Manual/ManualFlashCardCreator"
 import UnderDevelopmentBanner from "@/components/common/underDevelopment"
-import PreviewCards from "./Previews/PreviewCards"
 
+import ManualFlashCardCreator from "../Cards/Manual/ManualFlashCardCreator"
+import PreviewCards from "../Cards/Previews/PreviewCards"
+import PreviewQuizzes from "./Preview/previewQuizes"
+import ManualQuizCreator from "./Manual/ManualQuizeCreator"
 
 
 
@@ -53,7 +56,7 @@ interface Document {
   createdAt: string
 }
 
-export default function ProjectsPage() {
+export default function QuizProjectsPage() {
   const { data: session, status } = useSession()
   const [projects, setProjects] = useState<Project[]>([])
   const [loading, setLoading] = useState(true)
@@ -487,16 +490,16 @@ export default function ProjectsPage() {
         <UnderDevelopmentBanner/>
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Your Falshcard Projects</h1>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Your Quiz Projects</h1>
             <p className="text-gray-600 dark:text-gray-300">
-              View and manage all of your study flashcard projects in one place.
+              View and manage all of your study quiz projects in one place.
             </p>
           </div>
           <div className="flex gap-3">
-            <PreviewCards 
+            <PreviewQuizzes 
             className="bg-purple-700 text-white"
             />
-            <ManualFlashCardCreator />
+            <ManualQuizCreator/>
           </div>
         </div>
       </div>
@@ -548,11 +551,11 @@ export default function ProjectsPage() {
                   </Button>
                   <Button
                     variant="outline"
-                    className="mt-6 w-full gap-2 bg-transparent hover:bg-blue-400 hover:text-white"
+                    className="mt-6 w-full gap-2 bg-transparent hover:bg-green-400 hover:text-white"
                     onClick={() => setSelectedProject(project)}
                   >
-                    Generate AI Flashcards
-                    <Sparkles className="w-4 h-4 mr-2" />
+                    Generate AI Quizzes
+                    <HelpCircle className="w-4 h-4 mr-2" />
                   </Button>
                 </CardContent>
               </Card>
@@ -750,7 +753,7 @@ export default function ProjectsPage() {
                     <ul className="text-sm text-red-700 mt-2 ml-4 list-disc">
                       <li>All uploaded documents ({projectToDelete.file_count} files)</li>
                       <li>Project settings and progress</li>
-                      <li>Generated flashcards and quizzes</li>
+                      <li>Generated quizzes and questions</li>
                       <li>Chat history and AI interactions</li>
                     </ul>
                   </div>

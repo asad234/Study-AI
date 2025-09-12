@@ -8,8 +8,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Send, Bot, User, FileText, BookOpen, Lightbulb, MessageSquare } from "lucide-react"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Progress } from "@/components/ui/progress"
+import { Label } from "@/components/ui/label"
+import { Send, Bot, User, FileText, Lightbulb, MessageSquare, FolderOpen, ArrowRight } from "lucide-react"
 import { useSession } from "next-auth/react"
+import UnderDevelopmentBanner from "@/components/common/underDevelopment"
 
 interface Message {
   id: string
@@ -23,6 +27,20 @@ interface SuggestedQuestion {
   question: string
   category: string
   difficulty: string
+}
+
+interface Project {
+  id: string
+  name: string
+  description: string
+  category?: string
+  study_goal?: string
+  estimated_hours?: number
+  status: string
+  progress: number
+  file_count: number
+  created_at: string
+  target_date?: string
 }
 
 const sampleMessages: Message[] = [
@@ -41,28 +59,29 @@ function ChatPageComponent() {
   const [messages, setMessages] = useState<Message[]>(sampleMessages)
   const [inputMessage, setInputMessage] = useState("")
   const [isTyping, setIsTyping] = useState(false)
-  const [availableMaterials, setAvailableMaterials] = useState<any[]>([])
-  const [isLoadingMaterials, setIsLoadingMaterials] = useState(true)
+  const [availableProjects, setAvailableProjects] = useState<Project[]>([])
+  const [isLoadingProjects, setIsLoadingProjects] = useState(true)
   const [suggestedQuestions, setSuggestedQuestions] = useState<SuggestedQuestion[]>([])
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(true)
   const [conversationId, setConversationId] = useState<string | null>(null)
+  const [selectedProject, setSelectedProject] = useState<Project | null>(null)
 
-  const fetchMaterials = async () => {
+  const fetchProjects = async () => {
     if (!session?.user?.email || status !== "authenticated") return
 
     try {
-      setIsLoadingMaterials(true)
-      const response = await fetch("/api/documents")
+      setIsLoadingProjects(true)
+      const response = await fetch("/api/projects")
       if (response.ok) {
         const data = await response.json()
-        if (data.success && Array.isArray(data.documents)) {
-          setAvailableMaterials(data.documents)
+        if (data.success && Array.isArray(data.projects)) {
+          setAvailableProjects(data.projects)
         }
       }
     } catch (error) {
-      console.error("Failed to fetch materials:", error)
+      console.error("Failed to fetch projects:", error)
     } finally {
-      setIsLoadingMaterials(false)
+      setIsLoadingProjects(false)
     }
   }
 
@@ -161,7 +180,7 @@ function ChatPageComponent() {
 
   useEffect(() => {
     if (status === "authenticated") {
-      fetchMaterials()
+      fetchProjects()
       fetchSuggestedQuestions()
     }
   }, [session, status])
@@ -354,32 +373,48 @@ function ChatPageComponent() {
             </CardContent>
           </Card>
 
-          {/* Available Materials */}
+          {/* Available Projects */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg flex items-center gap-2">
-                <BookOpen className="w-5 h-5" />
-                Available Materials
+                <FolderOpen className="w-5 h-5" />
+                Available Projects
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {isLoadingMaterials ? (
-                <div className="text-sm text-gray-500 text-center py-4">Loading materials...</div>
-              ) : availableMaterials.length > 0 ? (
-                availableMaterials.map((file) => (
-                  <div key={file.id} className="flex items-center gap-2 p-2 border rounded">
-                    <FileText className="w-4 h-4 text-gray-500" />
-                    <span className="text-sm truncate">{file.title || file.file_name}</span>
-                    {file.status === "ready" && (
-                      <Badge variant="secondary" className="text-xs ml-auto">
-                        Ready
-                      </Badge>
-                    )}
-                  </div>
+              {isLoadingProjects ? (
+                <div className="text-sm text-gray-500 text-center py-4">Loading projects...</div>
+              ) : availableProjects.length > 0 ? (
+                availableProjects.map((project) => (
+                  <Card key={project.id} className="p-3 hover:shadow-md transition-shadow">
+                    <div className="space-y-3">
+                      <div>
+                        <h4 className="font-medium text-sm truncate">{project.name}</h4>
+                        <p className="text-xs text-gray-500 truncate">{project.description}</p>
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1 text-xs text-gray-500">
+                          <FileText className="w-3 h-3" />
+                          <span>{project.file_count} docs</span>
+                        </div>
+                        <Badge variant="secondary" className="text-xs">
+                          {project.status}
+                        </Badge>
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="w-full gap-2 bg-transparent"
+                        onClick={() => setSelectedProject(project)}
+                      >
+                        View Project <ArrowRight className="w-3 h-3" />
+                      </Button>
+                    </div>
+                  </Card>
                 ))
               ) : (
                 <div className="text-sm text-gray-500 text-center py-4">
-                  No materials uploaded yet. Upload some study materials to get started!
+                  No projects created yet. Create a project to get started!
                 </div>
               )}
             </CardContent>
@@ -399,6 +434,74 @@ function ChatPageComponent() {
           </Card>
         </div>
       </div>
+
+      {/* Project Dialog */}
+      {selectedProject && (
+        <Dialog open={!!selectedProject} onOpenChange={() => setSelectedProject(null)}>
+          <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <UnderDevelopmentBanner/>
+              <DialogTitle>{selectedProject.name}</DialogTitle>
+              <DialogDescription>{selectedProject.description}</DialogDescription>
+            </DialogHeader>
+            <div className="p-4 space-y-6">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Project Overview</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label>Status</Label>
+                      <Badge
+                        className="mt-1"
+                        variant={selectedProject.status === "completed" ? "default" : "secondary"}
+                      >
+                        {selectedProject.status}
+                      </Badge>
+                    </div>
+                    <div>
+                      <Label>Category</Label>
+                      <div className="mt-1 font-medium">{selectedProject.category || "N/A"}</div>
+                    </div>
+                    <div>
+                      <Label>Study Goal</Label>
+                      <div className="mt-1 font-medium">{selectedProject.study_goal || "N/A"}</div>
+                    </div>
+                    <div>
+                      <Label>Estimated Hours</Label>
+                      <div className="mt-1 font-medium">{selectedProject.estimated_hours || "N/A"} hours</div>
+                    </div>
+                  </div>
+                  <div className="space-y-1 mt-4">
+                    <div className="flex justify-between text-xs text-gray-500">
+                      <span>Progress</span>
+                      <span>{selectedProject.progress}%</span>
+                    </div>
+                    <Progress value={selectedProject.progress} className="h-2" />
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Documents</CardTitle>
+                  <CardDescription>Files associated with this project.</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="flex items-center gap-2 p-4 border rounded-lg">
+                    <FileText className="w-5 h-5 text-gray-500" />
+                    <div>
+                      <p className="font-medium">{selectedProject.file_count} Documents</p>
+                      <p className="text-sm text-gray-500">Ready for AI analysis</p>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }
