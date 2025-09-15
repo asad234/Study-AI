@@ -1,4 +1,4 @@
-import ManualFlashCardCreator from '@/components/Dashboard/Study-tool/Cards/ManualFlashCardCreator'
+import ManualFlashCardCreator from '@/components/Dashboard/Study-tool/Cards/Manual/ManualFlashCardCreator'
 import React from 'react'
 
 const page = () => {

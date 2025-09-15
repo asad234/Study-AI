@@ -87,6 +87,11 @@ const studyTools = [
     url: "/dashboard/flash-cards",
     icon: BookOpen,
   },
+   {
+    title: "Quize Page",
+    url: "/dashboard/preview-quize",
+    icon: BookOpen,
+  },
 ]
 
 const accountItems = [
