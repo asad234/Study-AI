@@ -17,7 +17,7 @@ interface Quiz {
   difficulty?: string;
   timeLimit?: number;
   lastScore?: number;
-  isAIGenerated?: boolean; // New property to indicate if the quiz is AI-generated
+  isAIGenerated?: boolean; // Indicates if the quiz is AI-generated
 }
 
 interface PreviewQuizzesProps {
@@ -33,7 +33,7 @@ const PreviewQuizzes: React.FC<PreviewQuizzesProps> = ({
 }) => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
 
-  // Mock data for demonstration, now with isAIGenerated property
+  // Mock data for demonstration
   const mockQuizzes: Quiz[] = [
     { 
       id: '1', 
@@ -44,7 +44,7 @@ const PreviewQuizzes: React.FC<PreviewQuizzesProps> = ({
       difficulty: 'Medium',
       timeLimit: 15,
       lastScore: 85,
-      isAIGenerated: false // Custom Made
+      isAIGenerated: false
     },
     { 
       id: '2', 
@@ -55,7 +55,7 @@ const PreviewQuizzes: React.FC<PreviewQuizzesProps> = ({
       difficulty: 'Hard',
       timeLimit: 30,
       lastScore: 92,
-      isAIGenerated: true // AI Generated
+      isAIGenerated: true
     },
     { 
       id: '3', 
@@ -66,7 +66,7 @@ const PreviewQuizzes: React.FC<PreviewQuizzesProps> = ({
       difficulty: 'Easy',
       timeLimit: 20,
       lastScore: 78,
-      isAIGenerated: false // Custom Made
+      isAIGenerated: false
     },
     { 
       id: '4', 
@@ -76,7 +76,7 @@ const PreviewQuizzes: React.FC<PreviewQuizzesProps> = ({
       createdAt: '2024-01-08',
       difficulty: 'Medium',
       timeLimit: 25,
-      isAIGenerated: true // AI Generated
+      isAIGenerated: true
     },
     { 
       id: '5', 
@@ -87,24 +87,15 @@ const PreviewQuizzes: React.FC<PreviewQuizzesProps> = ({
       difficulty: 'Hard',
       timeLimit: 40,
       lastScore: 95,
-      isAIGenerated: true // AI Generated
+      isAIGenerated: true
     },
   ];
 
   const displayQuizzes = quizzes && quizzes.length > 0 ? quizzes : mockQuizzes;
 
-  const handleOpenDialog = () => {
-    setIsDialogOpen(true);
-  };
-
-  const handleCloseDialog = () => {
-    setIsDialogOpen(false);
-  };
-
   const handleTakeQuiz = (quizId: string) => {
-    // This will be implemented later
     console.log(`Take quiz: ${quizId}`);
-    // You can add navigation logic here later
+    // Add navigation logic here later
   };
 
   const formatDate = (dateString: string) => {
@@ -150,9 +141,9 @@ const PreviewQuizzes: React.FC<PreviewQuizzesProps> = ({
 
   return (
     <>
-      {/* The button that triggers the dialog */}
+      {/* Button that triggers the dialog */}
       <Button
-        onClick={handleOpenDialog}
+        onClick={() => setIsDialogOpen(true)}
         variant="outline"
         className={`gap-2 hover:bg-purple-50 hover:border-purple-300 ${className}`}
       >
@@ -160,9 +151,9 @@ const PreviewQuizzes: React.FC<PreviewQuizzesProps> = ({
         {buttonText}
       </Button>
 
-      {/* The dialog */}
+      {/* Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
-        <DialogContent className="sm:max-w-4xl max-h-[80vh] overflow-hidden">
+        <DialogContent className="sm:max-w-4xl max-h-[80vh] flex flex-col">
           <DialogHeader>
             <UnderDevelopmentBanner/>
             <DialogTitle className="flex items-center gap-2">
@@ -174,7 +165,8 @@ const PreviewQuizzes: React.FC<PreviewQuizzesProps> = ({
             </DialogDescription>
           </DialogHeader>
 
-          <div className="overflow-y-auto max-h-[calc(80vh-120px)] p-1">
+          {/* Scrollable area */}
+          <div className="flex-1 overflow-y-auto p-1">
             {displayQuizzes.length === 0 ? (
               <div className="text-center py-12">
                 <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -248,7 +240,7 @@ const PreviewQuizzes: React.FC<PreviewQuizzesProps> = ({
                           )}
                         </div>
 
-                        {/* New Badge for AI/Manual */}
+                        {/* AI/Custom Badge */}
                         <div className="flex justify-start">
                           <Badge 
                             variant={quiz.isAIGenerated ? 'secondary' : 'outline'} 
@@ -275,9 +267,10 @@ const PreviewQuizzes: React.FC<PreviewQuizzesProps> = ({
             )}
           </div>
 
+          {/* Footer */}
           <div className="flex justify-end pt-4 border-t">
             <Button
-              onClick={handleCloseDialog}
+              onClick={() => setIsDialogOpen(false)}
               variant="outline"
             >
               Close
