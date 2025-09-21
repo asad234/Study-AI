@@ -6,6 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Eye, BookOpen, ArrowRight, X } from "lucide-react";
+import UnderDevelopmentBanner from '@/components/common/underDevelopment';
 
 interface FlashCard {
   id: string;
@@ -91,6 +92,7 @@ const PreviewCards: React.FC<PreviewCardsProps> = ({
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-4xl max-h-[80vh] overflow-hidden">
           <DialogHeader>
+            <UnderDevelopmentBanner/>
             <DialogTitle className="flex items-center gap-2">
               <BookOpen className="w-5 h-5" />
               Preview Flashcards
