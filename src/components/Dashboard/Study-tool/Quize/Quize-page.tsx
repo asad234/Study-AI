@@ -18,6 +18,7 @@ import {
   HelpCircle,
   CalendarIcon,
   Upload,
+  Loader2,
 } from "lucide-react"
 import { useState, useEffect } from "react"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -37,6 +38,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Calendar } from "@/components/ui/calendar"
 import { cn } from "@/lib/utils"
 import { format } from "date-fns";
+import { useRouter } from "next/navigation";
 
 
 
@@ -78,6 +80,13 @@ export default function QuizProjectsPage() {
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
   const [deleteConfirmationText, setDeleteConfirmationText] = useState("")
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
+  const [isQuizGeneratorOpen, setIsQuizGeneratorOpen] = useState(false)
+  const [quizGenerationProject, setQuizGenerationProject] = useState<Project | null>(null)
+  const [quizDifficulty, setQuizDifficulty] = useState("medium")
+  const [questionCount, setQuestionCount] = useState("10")
+  const [isGeneratingQuiz, setIsGeneratingQuiz] = useState(false)
+
+  const router = useRouter()
 
 
   const fetchProjects = async () => {
@@ -443,6 +452,52 @@ export default function QuizProjectsPage() {
     }
   }
 
+  const handleGenerateAIQuiz = (project: Project) => {
+    setQuizGenerationProject(project)
+    setIsQuizGeneratorOpen(true)
+  }
+
+  const generateQuiz = async () => {
+    if (!quizGenerationProject) return
+
+    setIsGeneratingQuiz(true)
+    
+    try {
+      // Simulate quiz generation (replace with actual API call)
+      await new Promise(resolve => setTimeout(resolve, 2000))
+      
+      // Store quiz parameters in sessionStorage for the quiz generator page
+      const quizParams = {
+        projectId: quizGenerationProject.id,
+        projectName: quizGenerationProject.name,
+        difficulty: quizDifficulty,
+        questionCount: parseInt(questionCount),
+        documents: quizGenerationProject.documents || []
+      }
+      
+      sessionStorage.setItem('quizGenerationParams', JSON.stringify(quizParams))
+      
+      toast({
+        title: "Quiz Generation Started!",
+        description: "Redirecting to quiz generator...",
+      })
+      
+      // Redirect to quiz generator page
+      router.push('/dashboard/quiz/quiz-generator')
+      
+    } catch (error) {
+      console.error("Error generating quiz:", error)
+      toast({
+        title: "Error",
+        description: "Failed to generate quiz. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsGeneratingQuiz(false)
+      setIsQuizGeneratorOpen(false)
+    }
+  }
+
   const getFileIcon = (type: string) => {
     if (type.includes("pdf")) return <FileText className="w-6 h-6 text-red-500" />
     if (type.includes("word") || type.includes("document")) return <FileText className="w-6 h-6 text-blue-500" />
@@ -562,7 +617,7 @@ export default function QuizProjectsPage() {
                   <Button
                     variant="outline"
                     className="mt-6 w-full gap-2 bg-transparent hover:bg-green-400 hover:text-white"
-                    onClick={() => setSelectedProject(project)}
+                    onClick={() => handleGenerateAIQuiz(project)}
                   >
                     Generate AI Quizzes
                     <HelpCircle className="w-4 h-4 mr-2" />
@@ -573,6 +628,87 @@ export default function QuizProjectsPage() {
           </div>
         )}
       </main>
+
+      {/* AI Quiz Generation Dialog */}
+      <Dialog open={isQuizGeneratorOpen} onOpenChange={setIsQuizGeneratorOpen}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-yellow-500" />
+              Generate AI Quiz
+            </DialogTitle>
+            <DialogDescription>
+              Create a personalized quiz from your project materials: {quizGenerationProject?.name}
+            </DialogDescription>
+          </DialogHeader>
+          <Card>
+            <CardContent className="space-y-6 pt-6">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Difficulty Level</Label>
+                  <Select value={quizDifficulty} onValueChange={setQuizDifficulty}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="easy">Easy</SelectItem>
+                      <SelectItem value="medium">Medium</SelectItem>
+                      <SelectItem value="hard">Hard</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                
+                <div className="space-y-2">
+                  <Label>Number of Questions</Label>
+                  <Select value={questionCount} onValueChange={setQuestionCount}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="3">3 Questions</SelectItem>
+                      <SelectItem value="5">5 Questions</SelectItem>
+                      <SelectItem value="10">10 Questions</SelectItem>
+                      <SelectItem value="15">15 Questions</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              
+              <div className="bg-blue-50 dark:bg-blue-950/20 p-4 rounded-lg">
+                <div className="flex items-start gap-3">
+                  <FileText className="w-5 h-5 text-blue-600 mt-0.5" />
+                  <div>
+                    <p className="text-sm font-medium text-blue-900 dark:text-blue-100">
+                      Quiz will be generated from your project documents
+                    </p>
+                    <p className="text-xs text-blue-700 dark:text-blue-300 mt-1">
+                      {quizGenerationProject?.file_count || 0} documents • AI will analyze content to create relevant questions
+                    </p>
+                  </div>
+                </div>
+              </div>
+              
+              <Button 
+                onClick={generateQuiz} 
+                disabled={isGeneratingQuiz} 
+                className="w-full"
+              >
+                {isGeneratingQuiz ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Generating Quiz...
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Generate Quiz
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+        </DialogContent>
+      </Dialog>
 
       {selectedProject && (
         <Dialog
