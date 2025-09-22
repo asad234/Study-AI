@@ -1,11 +1,11 @@
 
-import QuizPage from '@/components/Dashboard/Study-tool/Quize/quize'
+import QuizProjectsPage from '@/components/Dashboard/Study-tool/Quize/Quize-page'
 import React from 'react'
 
 function page() {
   return (
     <div>
-      <QuizPage/>
+      <QuizProjectsPage/>
     </div>
   )
 }

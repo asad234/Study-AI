@@ -54,7 +54,6 @@ const navigationItems = [
     icon: LayoutDashboard,
     gradient: "from-violet-500 to-purple-600",
     lightGradient: "from-violet-400 to-purple-500",
-    description: "Dashboard home"
   },
   {
     title: "Upload Files",
@@ -62,7 +61,6 @@ const navigationItems = [
     icon: CloudUpload,
     gradient: "from-blue-500 to-cyan-600",
     lightGradient: "from-blue-400 to-cyan-500",
-    description: "Import content"
   },
    {
     title: "Projects",
@@ -70,34 +68,47 @@ const navigationItems = [
     icon: FolderOpen,
     gradient: "from-emerald-500 to-teal-600",
     lightGradient: "from-emerald-400 to-teal-500",
-    description: "Manage projects"
   },
 ]
 
 const studyTools = [
+
+  //"from-teal-400 to-cyan-500"
+  //{
+    //title: "Flashcards",
+    //url: "/dashboard/flash-cards/cards",
+    //icon: Zap,
+    //"from-teal-500 to-cyan-600"
+    //gradient: "from-orange-500 to-red-500",
+    //lightGradient: "from-orange-400 to-red-400",
+  //},
   {
     title: "Flashcards",
-    url: "/dashboard/cards",
+    url: "/dashboard/flash-cards",
     icon: Zap,
     gradient: "from-orange-500 to-red-500",
     lightGradient: "from-orange-400 to-red-400",
-    description: "Quick review"
   },
   {
     title: "Quiz Generator",
     url: "/dashboard/quiz",
-    icon: FileQuestion,
-    gradient: "from-pink-500 to-rose-600",
-    lightGradient: "from-pink-400 to-rose-500",
-    description: "Test yourself"
+    icon: BookOpen,
+    gradient: "from-purple-500 to-indigo-600",
+    lightGradient: "from-purple-400 to-indigo-500",
   },
+  //{
+    //title: "Quiz Generator",
+    //url: "/dashboard/quiz/quiz-generator",
+    //icon: FileQuestion,
+    //gradient: "from-pink-500 to-rose-600",
+    //lightGradient: "from-pink-400 to-rose-500",
+  //},
   {
     title: "AI Chat",
     url: "/dashboard/chat",
     icon: MessageCircle,
     gradient: "from-indigo-500 to-blue-600",
     lightGradient: "from-indigo-400 to-blue-500",
-    description: "AI assistant"
   },
   {
     title: "Exam Simulator",
@@ -105,23 +116,6 @@ const studyTools = [
     icon: GraduationCap,
     gradient: "from-amber-500 to-yellow-600",
     lightGradient: "from-amber-400 to-yellow-500",
-    description: "Practice exams"
-  },
-  {
-    title: "Study Cards",
-    url: "/dashboard/flash-cards",
-    icon: BookOpen,
-    gradient: "from-teal-500 to-cyan-600",
-    lightGradient: "from-teal-400 to-cyan-500",
-    description: "Card library"
-  },
-   {
-    title: "Quiz Preview",
-    url: "/dashboard/preview-quize",
-    icon: Trophy,
-    gradient: "from-purple-500 to-indigo-600",
-    lightGradient: "from-purple-400 to-indigo-500",
-    description: "Preview tests"
   },
 ]
 
@@ -132,39 +126,33 @@ const accountItems = [
     icon: CreditCard,
     gradient: "from-green-500 to-emerald-600",
     lightGradient: "from-green-400 to-emerald-500",
-    description: "Billing & plans"
   },
   {
     title: "Settings",
     icon: Settings,
     gradient: "from-gray-500 to-slate-600",
     lightGradient: "from-gray-400 to-slate-500",
-    description: "Preferences",
     isDropdown: true,
     subItems: [
       {
         title: "Account Settings",
         url: "/dashboard/settings",
         icon: Settings,
-        description: "Profile & preferences"
       },
       {
         title: "Privacy",
         url: "/dashboard/privacy",
         icon: Shield,
-        description: "Security settings"
       },
       {
         title: "Help & Support",
         url: "/dashboard/help",
         icon: LifeBuoy,
-        description: "Get assistance"
       },
       {
         title: "What's New",
         url: "/dashboard/new",
         icon: Sparkles,
-        description: "Latest updates"
       }
     ]
   },
@@ -174,7 +162,6 @@ const accountItems = [
     icon: Lightbulb,
     gradient: "from-yellow-500 to-amber-600",
     lightGradient: "from-yellow-400 to-amber-500",
-    description: "Suggest ideas"
   },
 ]
 
@@ -275,18 +262,13 @@ export function AppSidebar() {
                       `}>
                         <item.icon className="w-4 h-4 text-white" />
                       </div>
-                      <div className="flex flex-col">
-                        <span className={`font-medium text-sm ${
-                          pathname === item.url 
-                            ? 'text-gray-900 dark:text-white' 
-                            : 'text-gray-700 dark:text-slate-300 group-hover:text-gray-900 dark:group-hover:text-white'
-                        }`}>
-                          {item.title}
-                        </span>
-                        <span className="text-xs text-gray-500 dark:text-slate-500 group-hover:text-gray-600 dark:group-hover:text-slate-400">
-                          {item.description}
-                        </span>
-                      </div>
+                      <span className={`font-medium text-sm ${
+                        pathname === item.url 
+                          ? 'text-gray-900 dark:text-white' 
+                          : 'text-gray-700 dark:text-slate-300 group-hover:text-gray-900 dark:group-hover:text-white'
+                      }`}>
+                        {item.title}
+                      </span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -326,18 +308,13 @@ export function AppSidebar() {
                       `}>
                         <item.icon className="w-4 h-4 text-white" />
                       </div>
-                      <div className="flex flex-col">
-                        <span className={`font-medium text-sm ${
-                          pathname === item.url 
-                            ? 'text-gray-900 dark:text-white' 
-                            : 'text-gray-700 dark:text-slate-300 group-hover:text-gray-900 dark:group-hover:text-white'
-                        }`}>
-                          {item.title}
-                        </span>
-                        <span className="text-xs text-gray-500 dark:text-slate-500 group-hover:text-gray-600 dark:group-hover:text-slate-400">
-                          {item.description}
-                        </span>
-                      </div>
+                      <span className={`font-medium text-sm ${
+                        pathname === item.url 
+                          ? 'text-gray-900 dark:text-white' 
+                          : 'text-gray-700 dark:text-slate-300 group-hover:text-gray-900 dark:group-hover:text-white'
+                      }`}>
+                        {item.title}
+                      </span>
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -378,18 +355,13 @@ export function AppSidebar() {
                           `}>
                             <item.icon className="w-4 h-4 text-white" />
                           </div>
-                          <div className="flex flex-col flex-1">
-                            <span className={`font-medium text-sm ${
-                              settingsExpanded || item.subItems?.some(subItem => pathname === subItem.url)
-                                ? 'text-gray-900 dark:text-white' 
-                                : 'text-gray-700 dark:text-slate-300 group-hover:text-gray-900 dark:group-hover:text-white'
-                            }`}>
-                              {item.title}
-                            </span>
-                            <span className="text-xs text-gray-500 dark:text-slate-500 group-hover:text-gray-600 dark:group-hover:text-slate-400">
-                              {item.description}
-                            </span>
-                          </div>
+                          <span className={`font-medium text-sm ${
+                            settingsExpanded || item.subItems?.some(subItem => pathname === subItem.url)
+                              ? 'text-gray-900 dark:text-white' 
+                              : 'text-gray-700 dark:text-slate-300 group-hover:text-gray-900 dark:group-hover:text-white'
+                          }`}>
+                            {item.title}
+                          </span>
                           <ChevronDown className={`w-4 h-4 text-gray-500 dark:text-slate-500 transition-transform duration-200 ${settingsExpanded ? 'rotate-180' : ''}`} />
                         </div>
                       </SidebarMenuButton>
@@ -414,18 +386,13 @@ export function AppSidebar() {
                                 <div className="w-6 h-6 rounded-md bg-gray-200 dark:bg-slate-700 flex items-center justify-center">
                                   <subItem.icon className="w-3 h-3 text-gray-600 dark:text-slate-400" />
                                 </div>
-                                <div className="flex flex-col">
-                                  <span className={`font-medium text-sm ${
-                                    pathname === subItem.url 
-                                      ? 'text-gray-900 dark:text-white' 
-                                      : 'text-gray-700 dark:text-slate-300 group-hover:text-gray-900 dark:group-hover:text-white'
-                                  }`}>
-                                    {subItem.title}
-                                  </span>
-                                  <span className="text-xs text-gray-500 dark:text-slate-500 group-hover:text-gray-600 dark:group-hover:text-slate-400">
-                                    {subItem.description}
-                                  </span>
-                                </div>
+                                <span className={`font-medium text-sm ${
+                                  pathname === subItem.url 
+                                    ? 'text-gray-900 dark:text-white' 
+                                    : 'text-gray-700 dark:text-slate-300 group-hover:text-gray-900 dark:group-hover:text-white'
+                                }`}>
+                                  {subItem.title}
+                                </span>
                               </Link>
                             </SidebarMenuButton>
                           ))}
@@ -454,18 +421,13 @@ export function AppSidebar() {
                         `}>
                           <item.icon className="w-4 h-4 text-white" />
                         </div>
-                        <div className="flex flex-col">
-                          <span className={`font-medium text-sm ${
-                            pathname === item.url 
-                              ? 'text-gray-900 dark:text-white' 
-                              : 'text-gray-700 dark:text-slate-300 group-hover:text-gray-900 dark:group-hover:text-white'
-                          }`}>
-                            {item.title}
-                          </span>
-                          <span className="text-xs text-gray-500 dark:text-slate-500 group-hover:text-gray-600 dark:group-hover:text-slate-400">
-                            {item.description}
-                          </span>
-                        </div>
+                        <span className={`font-medium text-sm ${
+                          pathname === item.url 
+                            ? 'text-gray-900 dark:text-white' 
+                            : 'text-gray-700 dark:text-slate-300 group-hover:text-gray-900 dark:group-hover:text-white'
+                        }`}>
+                          {item.title}
+                        </span>
                       </Link>
                     </SidebarMenuButton>
                   ) : null}
@@ -509,7 +471,7 @@ export function AppSidebar() {
                 <DropdownMenuItem asChild className="hover:bg-gray-100 dark:hover:bg-slate-700/50 focus:bg-gray-100 dark:focus:bg-slate-700/50 cursor-pointer">
                   <Link href="/dashboard/settings" className="flex items-center">
                     <Settings className="mr-3 h-4 w-4 text-gray-500 dark:text-slate-400" />
-                    <span className="text-gray-800 dark:text-slate-200">Settings</span>
+                    <span className="text-gray-800 dark:text-slate-200">Account Settings</span>
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuItem 
