@@ -481,7 +481,7 @@ export default function ProjectsPage() {
           title: "Success!",
           description: `Generated ${data.flashcards.length} flashcards from ${project.name}`,
         })
-        router.push("/dashboard/cards")
+        router.push("/dashboard/flash-cards-cards")
       } else {
         console.error("Failed to generate flashcards:", data.error)
         toast({
