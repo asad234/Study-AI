@@ -1,19 +1,17 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
-import dynamic from "next/dynamic"
+
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Progress } from "@/components/ui/progress"
-import { Label } from "@/components/ui/label"
-import { Send, Bot, User, FileText, Lightbulb, MessageSquare, FolderOpen, ArrowRight, ChevronDown, ChevronUp } from "lucide-react"
-import { useSession } from "next-auth/react"
-import UnderDevelopmentBanner from "@/components/common/underDevelopment"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Send, Bot, User, FileText, MessageSquare, ChevronDown, Lightbulb, ChevronUp } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
 
 interface Message {
   id: string
@@ -21,13 +19,26 @@ interface Message {
   sender: "user" | "ai"
   timestamp: Date
   relatedFiles?: string[]
-  // Add structured content for parsed AI responses
   structuredContent?: {
     introduction?: string
-    elements?: Array<{title: string, explanation: string}>
+    elements?: Array<{ title: string; explanation: string }>
     summary?: string
     context?: string
   }
+}
+
+interface Project {
+  id: string
+  name: string
+  description: string
+  file_count: number
+  documents?: Document[]
+}
+
+interface Document {
+  id: string
+  title: string
+  status: string
 }
 
 interface SuggestedQuestion {
@@ -36,79 +47,48 @@ interface SuggestedQuestion {
   difficulty: string
 }
 
-interface Project {
-  id: string
-  name: string
-  description: string
-  category?: string
-  study_goal?: string
-  estimated_hours?: number
-  status: string
-  progress: number
-  file_count: number
-  created_at: string
-  target_date?: string
-}
-
-const sampleMessages: Message[] = [
-  {
-    id: "1",
-    content: "Hello! I'm your AI study assistant. I can help you understand concepts from your uploaded materials, create practice questions, or explain complex topics. What would you like to study today?",
-    sender: "ai",
-    timestamp: new Date(Date.now() - 300000),
-  },
-]
-
-// Function to parse structured AI responses
 const parseStructuredResponse = (text: string) => {
   const result: any = {
     raw: text,
     introduction: "",
     elements: [],
     summary: "",
-    context: ""
+    context: "",
   }
 
   try {
-    // Extract introduction (everything before the first divider)
-    const introMatch = text.split('---')[0].match(/\[CONCEPT INTRODUCTION\](.*?)(?=\[|$)/s)
+    const introMatch = text.split("---")[0].match(/\[CONCEPT INTRODUCTION\](.*?)(?=\[|$)/s)
     if (introMatch && introMatch[1]) {
       result.introduction = introMatch[1].trim()
     } else {
-      // Fallback: get text before first divider
-      const parts = text.split('---')
+      const parts = text.split("---")
       if (parts.length > 0) {
-        result.introduction = parts[0].replace(/\[CONCEPT INTRODUCTION\]/g, '').trim()
+        result.introduction = parts[0].replace(/\[CONCEPT INTRODUCTION\]/g, "").trim()
       }
     }
 
-    // Extract key elements section
     const keyElementsMatch = text.match(/\[KEY ELEMENTS\](.*?)(?=\[SUMMARY\]|---|$)/s)
     if (keyElementsMatch && keyElementsMatch[1]) {
       const elementsText = keyElementsMatch[1]
-      // Parse each element
       const elementRegex = /ELEMENT \d+: ([^\n]+)\nExplanation: ([^\n]+)/g
       let match
       while ((match = elementRegex.exec(elementsText)) !== null) {
         result.elements.push({
           title: match[1].trim(),
-          explanation: match[2].trim()
+          explanation: match[2].trim(),
         })
       }
     }
 
-    // Extract summary
     const summaryMatch = text.match(/\[SUMMARY\](.*?)(?=\[RELATED CONTEXT\]|---|$)/s)
     if (summaryMatch && summaryMatch[1]) {
-      result.summary = summaryMatch[1].replace(/SUMMARY:/, '').trim()
+      result.summary = summaryMatch[1].replace(/SUMMARY:/, "").trim()
     }
 
-    // Extract context
     const contextMatch = text.match(/\[RELATED CONTEXT\](.*?)(?=$)/s)
     if (contextMatch && contextMatch[1]) {
-      result.context = contextMatch[1].replace(/CONTEXT:/, '').trim()
+      result.context = contextMatch[1].replace(/CONTEXT:/, "").trim()
     } else {
-      // Try to find context without the header
       const contextFallback = text.match(/CONTEXT: (.*?)(?=$)/s)
       if (contextFallback && contextFallback[1]) {
         result.context = contextFallback[1].trim()
@@ -116,68 +96,177 @@ const parseStructuredResponse = (text: string) => {
     }
   } catch (error) {
     console.error("Error parsing structured response:", error)
-    // If parsing fails, fall back to displaying raw text
     result.introduction = text
   }
 
   return result
 }
 
-function ChatPageComponent() {
-  const { data: session, status } = useSession()
-  const [isHydrated, setIsHydrated] = useState(false)
-  const [messages, setMessages] = useState<Message[]>(sampleMessages)
+export default function AIChatPage() {
+  const { toast } = useToast()
+  const messagesEndRef = useRef<HTMLDivElement>(null)
+
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: "1",
+      content:
+        "Hello! I'm your AI study assistant. Select the projects and documents you'd like to chat about, then ask me anything!",
+      sender: "ai",
+      timestamp: new Date(),
+    },
+  ])
   const [inputMessage, setInputMessage] = useState("")
   const [isTyping, setIsTyping] = useState(false)
-  const [availableProjects, setAvailableProjects] = useState<Project[]>([])
+  const [conversationId, setConversationId] = useState<string | null>(null)
+
+  // Project and document selection
+  const [projects, setProjects] = useState<Project[]>([])
+  const [selectedProjects, setSelectedProjects] = useState<string[]>([])
+  const [availableDocuments, setAvailableDocuments] = useState<Document[]>([])
+  const [selectedDocuments, setSelectedDocuments] = useState<string[]>([])
   const [isLoadingProjects, setIsLoadingProjects] = useState(true)
+  const [projectsOpen, setProjectsOpen] = useState(false)
+  const [documentsOpen, setDocumentsOpen] = useState(false)
+
   const [suggestedQuestions, setSuggestedQuestions] = useState<SuggestedQuestion[]>([])
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(true)
-  const [conversationId, setConversationId] = useState<string | null>(null)
-  const [selectedProject, setSelectedProject] = useState<Project | null>(null)
-  const [showAllProjects, setShowAllProjects] = useState(false)
   const [showAllQuestions, setShowAllQuestions] = useState(false)
 
-  const fetchProjects = async () => {
-    if (!session?.user?.email || status !== "authenticated") return
-
-    try {
-      setIsLoadingProjects(true)
-      const response = await fetch("/api/projects")
-      if (response.ok) {
-        const data = await response.json()
-        if (data.success && Array.isArray(data.projects)) {
-          setAvailableProjects(data.projects)
+  // Fetch projects
+  useEffect(() => {
+    const fetchProjects = async () => {
+      try {
+        setIsLoadingProjects(true)
+        const response = await fetch("/api/projects")
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && Array.isArray(data.projects)) {
+            setProjects(data.projects)
+          }
         }
+      } catch (error) {
+        console.error("Failed to fetch projects:", error)
+        toast({
+          title: "Error",
+          description: "Failed to load projects",
+          variant: "destructive",
+        })
+      } finally {
+        setIsLoadingProjects(false)
       }
-    } catch (error) {
-      console.error("Failed to fetch projects:", error)
-    } finally {
-      setIsLoadingProjects(false)
+    }
+
+    fetchProjects()
+  }, [toast])
+
+  useEffect(() => {
+    const fetchSuggestedQuestions = async () => {
+      try {
+        setIsLoadingSuggestions(true)
+        const response = await fetch("/api/chats/suggested")
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && Array.isArray(data.questions)) {
+            setSuggestedQuestions(data.questions)
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch suggested questions:", error)
+      } finally {
+        setIsLoadingSuggestions(false)
+      }
+    }
+
+    fetchSuggestedQuestions()
+  }, [])
+
+  // Update available documents when projects are selected
+  useEffect(() => {
+    const fetchDocuments = async () => {
+      if (selectedProjects.length === 0) {
+        setAvailableDocuments([])
+        setSelectedDocuments([])
+        return
+      }
+
+      try {
+        console.log("Fetching documents for projects:", selectedProjects)
+
+        const documentPromises = selectedProjects.map((projectId) =>
+          fetch(`/api/projects/${projectId}/documents`).then((res) => {
+            console.log("Response for project", projectId, "status:", res.status)
+            return res.json()
+          }),
+        )
+        const results = await Promise.all(documentPromises)
+        console.log("Document fetch results:", results)
+
+        const allDocs = results.flatMap((result) => result.documents || [])
+        console.log("Total documents found:", allDocs.length, allDocs)
+        setAvailableDocuments(allDocs)
+      } catch (error) {
+        console.error("Failed to fetch documents:", error)
+      }
+    }
+
+    fetchDocuments()
+  }, [selectedProjects])
+
+  // Toggle project selection
+  const toggleProject = (projectId: string) => {
+    setSelectedProjects((prev) =>
+      prev.includes(projectId) ? prev.filter((id) => id !== projectId) : [...prev, projectId],
+    )
+  }
+
+  // Toggle document selection
+  const toggleDocument = (documentId: string) => {
+    setSelectedDocuments((prev) =>
+      prev.includes(documentId) ? prev.filter((id) => id !== documentId) : [...prev, documentId],
+    )
+  }
+
+  // Select all projects
+  const toggleAllProjects = () => {
+    if (selectedProjects.length === projects.length) {
+      setSelectedProjects([])
+    } else {
+      setSelectedProjects(projects.map((p) => p.id))
     }
   }
 
-  const fetchSuggestedQuestions = async () => {
-    if (!session?.user?.email || status !== "authenticated") return
-
-    try {
-      setIsLoadingSuggestions(true)
-      const response = await fetch("/api/chats/suggested")
-      if (response.ok) {
-        const data = await response.json()
-        if (data.success && Array.isArray(data.questions)) {
-          setSuggestedQuestions(data.questions)
-        }
-      }
-    } catch (error) {
-      console.error("Failed to fetch suggested questions:", error)
-    } finally {
-      setIsLoadingSuggestions(false)
+  // Select all documents
+  const toggleAllDocuments = () => {
+    if (selectedDocuments.length === availableDocuments.length) {
+      setSelectedDocuments([])
+    } else {
+      setSelectedDocuments(availableDocuments.map((d) => d.id))
     }
   }
 
+  const handleSuggestedQuestion = (question: string) => {
+    setInputMessage(question)
+  }
+
+  // Send message
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return
+
+    if (selectedDocuments.length === 0) {
+      toast({
+        title: "No documents selected",
+        description: "Please select at least one document to chat about",
+        variant: "destructive",
+      })
+      return
+    }
+
+    console.log("Sending message:", {
+      message: inputMessage,
+      conversationId,
+      documentIds: selectedDocuments,
+      projectIds: selectedProjects,
+    })
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -199,22 +288,26 @@ function ChatPageComponent() {
         body: JSON.stringify({
           message: inputMessage,
           conversationId,
+          documentIds: selectedDocuments,
+          projectIds: selectedProjects,
         }),
       })
 
+      console.log("Chat API response status:", response.status)
+      const data = await response.json()
+      console.log("Chat API response data:", data)
+
       if (response.ok) {
-        const data = await response.json()
         if (data.success) {
-          // Parse the structured response
           const structuredContent = parseStructuredResponse(data.message.content)
-          
+
           const aiMessage: Message = {
             id: data.message.id,
             content: data.message.content,
             sender: "ai",
             timestamp: new Date(data.message.timestamp),
             relatedFiles: data.message.relatedFiles || [],
-            structuredContent: structuredContent
+            structuredContent: structuredContent,
           }
 
           setMessages((prev) => [...prev, aiMessage])
@@ -223,24 +316,18 @@ function ChatPageComponent() {
           throw new Error(data.error || "Failed to send message")
         }
       } else {
-        throw new Error("Failed to send message")
+        throw new Error(data.error || "Failed to send message")
       }
     } catch (error) {
       console.error("Failed to send message:", error)
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        content: "Sorry, I'm having trouble responding right now. Please try again.",
-        sender: "ai",
-        timestamp: new Date(),
-      }
-      setMessages((prev) => [...prev, errorMessage])
+      toast({
+        title: "Error",
+        description: "Failed to send message. Please try again.",
+        variant: "destructive",
+      })
     } finally {
       setIsTyping(false)
     }
-  }
-
-  const handleSuggestedQuestion = (question: string) => {
-    setInputMessage(question)
   }
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -250,48 +337,10 @@ function ChatPageComponent() {
     }
   }
 
+  // Auto-scroll to bottom
   useEffect(() => {
-    setIsHydrated(true)
-  }, [])
-
-  useEffect(() => {
-    if (status === "authenticated") {
-      fetchProjects()
-      fetchSuggestedQuestions()
-    }
-  }, [session, status])
-
-  if (!isHydrated) {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-300">Loading...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (status === "loading") {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-          <p className="text-gray-600 dark:text-gray-300">Loading session...</p>
-        </div>
-      </div>
-    )
-  }
-
-  if (status === "unauthenticated") {
-    return (
-      <div className="flex items-center justify-center min-h-[400px]">
-        <div className="text-center">
-          <p className="text-gray-600 dark:text-gray-300">Please sign in to access the chat.</p>
-        </div>
-      </div>
-    )
-  }
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" })
+  }, [messages])
 
   return (
     <div className="space-y-8 p-6 bg-gradient-to-br from-slate-50 to-blue-50/30 dark:from-gray-900 dark:to-blue-950/20 min-h-screen">
@@ -308,6 +357,148 @@ function ChatPageComponent() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* Chat Interface */}
           <div className="lg:col-span-3">
+            {/* Project and Document Selectors */}
+            <div className="mb-6 space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Project Selector */}
+                <div>
+                  <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                    Select Projects
+                  </label>
+                  <Popover open={projectsOpen} onOpenChange={setProjectsOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="w-full justify-between h-auto min-h-[44px] py-2 px-4 bg-white dark:bg-gray-800 border-2"
+                      >
+                        <span className="truncate">
+                          {selectedProjects.length === 0
+                            ? "Select projects..."
+                            : selectedProjects.length === projects.length
+                              ? "All projects selected"
+                              : `${selectedProjects.length} project${selectedProjects.length > 1 ? "s" : ""} selected`}
+                        </span>
+                        <ChevronDown className="ml-2 h-4 w-4 shrink-0" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[400px] p-4">
+                      <div className="space-y-3">
+                        <div className="flex items-center space-x-2 pb-2 border-b">
+                          <Checkbox
+                            id="select-all-projects"
+                            checked={selectedProjects.length === projects.length && projects.length > 0}
+                            onCheckedChange={toggleAllProjects}
+                          />
+                          <label htmlFor="select-all-projects" className="text-sm font-medium cursor-pointer">
+                            Select All Projects
+                          </label>
+                        </div>
+                        <div className="max-h-[300px] overflow-y-auto space-y-2">
+                          {isLoadingProjects ? (
+                            <div className="text-sm text-gray-500 text-center py-4">Loading projects...</div>
+                          ) : projects.length === 0 ? (
+                            <div className="text-sm text-gray-500 text-center py-4">No projects available</div>
+                          ) : (
+                            projects.map((project) => (
+                              <div
+                                key={project.id}
+                                className="flex items-start space-x-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded"
+                              >
+                                <Checkbox
+                                  id={`project-${project.id}`}
+                                  checked={selectedProjects.includes(project.id)}
+                                  onCheckedChange={() => toggleProject(project.id)}
+                                />
+                                <label htmlFor={`project-${project.id}`} className="flex-1 text-sm cursor-pointer">
+                                  <div className="font-medium">{project.name}</div>
+                                  <div className="text-xs text-gray-500">{project.file_count} documents</div>
+                                </label>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+
+                {/* Document Selector */}
+                <div>
+                  <label className="block text-sm font-medium mb-2 text-gray-700 dark:text-gray-300">
+                    Select Documents
+                  </label>
+                  <Popover open={documentsOpen} onOpenChange={setDocumentsOpen}>
+                    <PopoverTrigger asChild>
+                      <Button
+                        variant="outline"
+                        className="w-full justify-between h-auto min-h-[44px] py-2 px-4 bg-white dark:bg-gray-800 border-2"
+                        disabled={selectedProjects.length === 0}
+                      >
+                        <span className="truncate">
+                          {selectedDocuments.length === 0
+                            ? "Select documents..."
+                            : selectedDocuments.length === availableDocuments.length
+                              ? "All documents selected"
+                              : `${selectedDocuments.length} document${selectedDocuments.length > 1 ? "s" : ""} selected`}
+                        </span>
+                        <ChevronDown className="ml-2 h-4 w-4 shrink-0" />
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-[400px] p-4">
+                      <div className="space-y-3">
+                        <div className="flex items-center space-x-2 pb-2 border-b">
+                          <Checkbox
+                            id="select-all-documents"
+                            checked={
+                              selectedDocuments.length === availableDocuments.length && availableDocuments.length > 0
+                            }
+                            onCheckedChange={toggleAllDocuments}
+                          />
+                          <label htmlFor="select-all-documents" className="text-sm font-medium cursor-pointer">
+                            Select All Documents
+                          </label>
+                        </div>
+                        <div className="max-h-[300px] overflow-y-auto space-y-2">
+                          {availableDocuments.length === 0 ? (
+                            <div className="text-sm text-gray-500 text-center py-4">
+                              {selectedProjects.length === 0 ? "Select projects first" : "No documents available"}
+                            </div>
+                          ) : (
+                            availableDocuments.map((document) => (
+                              <div
+                                key={document.id}
+                                className="flex items-center space-x-2 p-2 hover:bg-gray-50 dark:hover:bg-gray-800 rounded"
+                              >
+                                <Checkbox
+                                  id={`document-${document.id}`}
+                                  checked={selectedDocuments.includes(document.id)}
+                                  onCheckedChange={() => toggleDocument(document.id)}
+                                />
+                                <label htmlFor={`document-${document.id}`} className="flex-1 text-sm cursor-pointer">
+                                  <div className="font-medium">{document.title}</div>
+                                  <Badge variant="secondary" className="text-xs mt-1">
+                                    {document.status}
+                                  </Badge>
+                                </label>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+
+              {selectedDocuments.length > 0 && (
+                <div className="text-sm text-gray-600 dark:text-gray-400 text-center">
+                  Chatting with {selectedDocuments.length} document{selectedDocuments.length > 1 ? "s" : ""} from{" "}
+                  {selectedProjects.length} project{selectedProjects.length > 1 ? "s" : ""}
+                </div>
+              )}
+            </div>
+
+            {/* Chat Card */}
             <Card className="h-[700px] flex flex-col border-2 border-gray-200/60 dark:border-gray-800/60 shadow-xl bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
               <CardHeader className="border-b border-gray-200/60 dark:border-gray-800/60 bg-gradient-to-r from-blue-50/50 to-purple-50/50 dark:from-blue-950/20 dark:to-purple-950/20">
                 <CardTitle className="flex items-center gap-3 text-xl">
@@ -316,7 +507,9 @@ function ChatPageComponent() {
                   </div>
                   Chat with AI
                 </CardTitle>
-                <CardDescription className="text-base">Ask questions about your uploaded study materials</CardDescription>
+                <CardDescription className="text-base">
+                  Ask questions about your uploaded study materials
+                </CardDescription>
               </CardHeader>
 
               {/* Messages */}
@@ -341,17 +534,12 @@ function ChatPageComponent() {
                           : "bg-white/90 dark:bg-gray-800/90 text-gray-900 dark:text-white border-gray-200 dark:border-gray-700 backdrop-blur-sm"
                       }`}
                     >
-                      {/* Render structured content if available */}
                       {message.sender === "ai" && message.structuredContent ? (
                         <div className="space-y-4">
-                          {/* Introduction */}
                           {message.structuredContent.introduction && (
-                            <div className="text-sm leading-relaxed">
-                              {message.structuredContent.introduction}
-                            </div>
+                            <div className="text-sm leading-relaxed">{message.structuredContent.introduction}</div>
                           )}
-                          
-                          {/* Key Elements */}
+
                           {message.structuredContent.elements && message.structuredContent.elements.length > 0 && (
                             <div className="space-y-4">
                               <div className="font-semibold text-sm border-b pb-1">KEY ELEMENTS:</div>
@@ -363,33 +551,32 @@ function ChatPageComponent() {
                               ))}
                             </div>
                           )}
-                          
-                          {/* Summary */}
+
                           {message.structuredContent.summary && (
                             <div className="bg-green-50/30 dark:bg-green-900/20 p-3 rounded-lg">
                               <div className="font-semibold text-sm">SUMMARY:</div>
                               <div className="text-sm mt-1">{message.structuredContent.summary}</div>
                             </div>
                           )}
-                          
-                          {/* Context */}
+
                           {message.structuredContent.context && (
-                            <div className="text-xs opacity-80 mt-2">
-                              {message.structuredContent.context}
-                            </div>
+                            <div className="text-xs opacity-80 mt-2">{message.structuredContent.context}</div>
                           )}
                         </div>
                       ) : (
-                        /* Fallback to regular message rendering */
                         <p className="text-sm leading-relaxed">{message.content}</p>
                       )}
 
                       {message.relatedFiles && message.relatedFiles.length > 0 && (
                         <div className="mt-3 space-y-2">
-                          <p className="text-xs opacity-80 font-medium">Related files:</p>
+                          <p className="text-xs opacity-80 font-medium">📄 Source documents:</p>
                           <div className="flex flex-wrap gap-2">
                             {message.relatedFiles.map((file, index) => (
-                              <Badge key={index} variant="secondary" className="text-xs border border-gray-300/50 bg-gray-100/80 dark:bg-gray-700/80">
+                              <Badge
+                                key={index}
+                                variant="secondary"
+                                className="text-xs border border-gray-300/50 bg-gray-100/80 dark:bg-gray-700/80"
+                              >
                                 <FileText className="w-3 h-3 mr-1" />
                                 {file}
                               </Badge>
@@ -433,21 +620,26 @@ function ChatPageComponent() {
                     </div>
                   </div>
                 )}
+                <div ref={messagesEndRef} />
               </CardContent>
 
               {/* Input */}
               <div className="p-6 border-t border-gray-200/60 dark:border-gray-800/60 bg-white/80 dark:bg-gray-900/80">
                 <div className="flex gap-3">
                   <Input
-                    placeholder="Ask a question about your study materials..."
+                    placeholder={
+                      selectedDocuments.length === 0
+                        ? "Select projects and documents above to start chatting..."
+                        : "Ask a question about your study materials..."
+                    }
                     value={inputMessage}
                     onChange={(e) => setInputMessage(e.target.value)}
                     onKeyPress={handleKeyPress}
                     className="flex-1 border-2 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-base bg-white/90 dark:bg-gray-800/90 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 transition-all duration-200"
                   />
-                  <Button 
-                    onClick={handleSendMessage} 
-                    disabled={!inputMessage.trim() || isTyping}
+                  <Button
+                    onClick={handleSendMessage}
+                    disabled={!inputMessage.trim() || isTyping || selectedDocuments.length === 0}
                     className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50"
                   >
                     <Send className="w-5 h-5" />
@@ -457,7 +649,6 @@ function ChatPageComponent() {
             </Card>
           </div>
 
-          {/* Sidebar - Remaining code unchanged */}
           <div className="space-y-6">
             {/* Suggested Questions */}
             <Card className="border-2 border-gray-200/60 dark:border-gray-800/60 shadow-xl bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
@@ -474,7 +665,6 @@ function ChatPageComponent() {
                   <div className="text-sm text-gray-500 text-center py-8">Loading suggestions...</div>
                 ) : suggestedQuestions.length > 0 ? (
                   <>
-                    {/* Show first 2 questions */}
                     {(showAllQuestions ? suggestedQuestions : suggestedQuestions.slice(0, 2)).map((item, index) => (
                       <Button
                         key={index}
@@ -487,18 +677,23 @@ function ChatPageComponent() {
                             {item.question}
                           </span>
                           <div className="flex flex-wrap gap-2 w-full">
-                            <Badge variant="secondary" className="text-xs border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50">
+                            <Badge
+                              variant="secondary"
+                              className="text-xs border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950/50"
+                            >
                               {item.category}
                             </Badge>
-                            <Badge variant="outline" className="text-xs border-2 border-purple-200 dark:border-purple-800">
+                            <Badge
+                              variant="outline"
+                              className="text-xs border-2 border-purple-200 dark:border-purple-800"
+                            >
                               {item.difficulty}
                             </Badge>
                           </div>
                         </div>
                       </Button>
                     ))}
-                    
-                    {/* Show dropdown toggle if more than 2 questions */}
+
                     {suggestedQuestions.length > 2 && (
                       <Button
                         variant="ghost"
@@ -521,78 +716,6 @@ function ChatPageComponent() {
                 ) : (
                   <div className="text-sm text-gray-500 text-center py-8">
                     Upload study materials to get personalized questions!
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-
-            {/* Available Projects */}
-            <Card className="border-2 border-gray-200/60 dark:border-gray-800/60 shadow-xl bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm">
-              <CardHeader className="border-b border-gray-200/60 dark:border-gray-800/60 bg-gradient-to-r from-green-50/50 to-blue-50/50 dark:from-green-950/20 dark:to-blue-950/20">
-                <CardTitle className="text-lg flex items-center gap-3">
-                  <div className="p-2 bg-gradient-to-r from-green-400 to-blue-400 rounded-lg shadow-md">
-                    <FolderOpen className="w-4 h-4 text-white" />
-                  </div>
-                  Available Projects
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 p-4">
-                {isLoadingProjects ? (
-                  <div className="text-sm text-gray-500 text-center py-8">Loading projects...</div>
-                ) : availableProjects.length > 0 ? (
-                  <>
-                    {/* Show first 2 projects */}
-                    {(showAllProjects ? availableProjects : availableProjects.slice(0, 2)).map((project) => (
-                      <Card key={project.id} className="p-4 border-2 border-gray-200/60 dark:border-gray-700/60 hover:shadow-lg hover:border-blue-300/60 dark:hover:border-blue-700/60 transition-all duration-200 bg-white/50 dark:bg-gray-800/50 rounded-xl">
-                        <div className="space-y-4">
-                          <div>
-                            <h4 className="font-semibold text-sm truncate">{project.name}</h4>
-                            <p className="text-xs text-gray-500 truncate mt-1">{project.description}</p>
-                          </div>
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2 text-xs text-gray-500">
-                              <FileText className="w-3 h-3" />
-                              <span>{project.file_count} docs</span>
-                            </div>
-                            <Badge variant="secondary" className="text-xs border border-green-200 dark:border-green-800 bg-green-50 dark:bg-green-950/50">
-                              {project.status}
-                            </Badge>
-                          </div>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            className="w-full gap-2 bg-gradient-to-r from-blue-50 to-purple-50 dark:from-blue-950/30 dark:to-purple-950/30 border-2 border-gray-200 dark:border-gray-700 hover:border-blue-300 dark:hover:border-blue-700 rounded-lg transition-all duration-200"
-                            onClick={() => setSelectedProject(project)}
-                          >
-                            View Project <ArrowRight className="w-3 h-3" />
-                          </Button>
-                        </div>
-                      </Card>
-                    ))}
-                    
-                    {/* Show dropdown toggle if more than 2 projects */}
-                    {availableProjects.length > 2 && (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="w-full gap-2 text-sm text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 border-2 border-dashed border-gray-300 dark:border-gray-600 hover:border-blue-300 dark:hover:border-blue-600 rounded-xl transition-all duration-200"
-                        onClick={() => setShowAllProjects(!showAllProjects)}
-                      >
-                        {showAllProjects ? (
-                          <>
-                            Show Less <ChevronUp className="w-4 h-4" />
-                          </>
-                        ) : (
-                          <>
-                            Show {availableProjects.length - 2} More Projects <ChevronDown className="w-4 h-4" />
-                          </>
-                        )}
-                      </Button>
-                    )}
-                  </>
-                ) : (
-                  <div className="text-sm text-gray-500 text-center py-8">
-                    No projects created yet. Create a project to get started!
                   </div>
                 )}
               </CardContent>
@@ -624,91 +747,7 @@ function ChatPageComponent() {
             </Card>
           </div>
         </div>
-
-        {/* Project Dialog */}
-        {selectedProject && (
-          <Dialog open={!!selectedProject} onOpenChange={() => setSelectedProject(null)}>
-            <DialogContent className="sm:max-w-[900px] max-h-[90vh] overflow-y-auto border-2 border-gray-200/60 dark:border-gray-800/60 shadow-2xl bg-white/90 dark:bg-gray-900/90 backdrop-blur-lg rounded-2xl">
-              <DialogHeader className="border-b border-gray-200/60 dark:border-gray-800/60 pb-4">
-                <UnderDevelopmentBanner/>
-                <DialogTitle className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
-                  {selectedProject.name}
-                </DialogTitle>
-                <DialogDescription className="text-base">{selectedProject.description}</DialogDescription>
-              </DialogHeader>
-              <div className="p-6 space-y-8">
-                <Card className="border-2 border-gray-200/60 dark:border-gray-800/60 shadow-lg bg-white/60 dark:bg-gray-800/60">
-                  <CardHeader className="bg-gradient-to-r from-blue-50/50 to-purple-50/50 dark:from-blue-950/20 dark:to-purple-950/20 border-b border-gray-200/60 dark:border-gray-800/60">
-                    <CardTitle>Project Overview</CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-6 p-6">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      <div>
-                        <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Status</Label>
-                        <Badge
-                          className="mt-2 border-2"
-                          variant={selectedProject.status === "completed" ? "default" : "secondary"}
-                        >
-                          {selectedProject.status}
-                        </Badge>
-                      </div>
-                      <div>
-                        <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Category</Label>
-                        <div className="mt-2 font-semibold text-gray-900 dark:text-gray-100">{selectedProject.category || "N/A"}</div>
-                      </div>
-                      <div>
-                        <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Study Goal</Label>
-                        <div className="mt-2 font-semibold text-gray-900 dark:text-gray-100">{selectedProject.study_goal || "N/A"}</div>
-                      </div>
-                      <div>
-                        <Label className="text-sm font-medium text-gray-700 dark:text-gray-300">Estimated Hours</Label>
-                        <div className="mt-2 font-semibold text-gray-900 dark:text-gray-100">{selectedProject.estimated_hours || "N/A"} hours</div>
-                      </div>
-                    </div>
-                    <div className="space-y-2 mt-6">
-                      <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400">
-                        <span className="font-medium">Progress</span>
-                        <span className="font-bold">{selectedProject.progress}%</span>
-                      </div>
-                      <Progress value={selectedProject.progress} className="h-3 bg-gray-200 dark:bg-gray-700 rounded-full" />
-                    </div>
-                  </CardContent>
-                </Card>
-
-                <Card className="border-2 border-gray-200/60 dark:border-gray-800/60 shadow-lg bg-white/60 dark:bg-gray-800/60">
-                  <CardHeader className="bg-gradient-to-r from-green-50/50 to-blue-50/50 dark:from-green-950/20 dark:to-blue-950/20 border-b border-gray-200/60 dark:border-gray-800/60">
-                    <CardTitle>Documents</CardTitle>
-                    <CardDescription>Files associated with this project.</CardDescription>
-                  </CardHeader>
-                  <CardContent className="p-6">
-                    <div className="flex items-center gap-4 p-6 border-2 border-gray-200 dark:border-gray-700 rounded-xl bg-gradient-to-r from-blue-50/30 to-green-50/30 dark:from-blue-950/20 dark:to-green-950/20">
-                      <div className="p-3 bg-gradient-to-r from-blue-400 to-green-400 rounded-lg shadow-md">
-                        <FileText className="w-6 h-6 text-white" />
-                      </div>
-                      <div>
-                        <p className="font-semibold text-lg text-gray-900 dark:text-gray-100">{selectedProject.file_count} Documents</p>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">Ready for AI analysis</p>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
-            </DialogContent>
-          </Dialog>
-        )}
       </div>
     </div>
   )
 }
-
-export default dynamic(() => Promise.resolve(ChatPageComponent), {
-  ssr: false,
-  loading: () => (
-    <div className="flex items-center justify-center min-h-[400px]">
-      <div className="text-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto mb-4"></div>
-        <p className="text-gray-600 dark:text-gray-300">Loading...</p>
-      </div>
-    </div>
-  ),
-})

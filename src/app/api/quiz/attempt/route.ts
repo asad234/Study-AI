@@ -30,9 +30,15 @@ export async function POST(request: NextRequest) {
 
     const userProfile = profiles.docs[0]
 
+    const quizIdNumber = Number(validatedData.quizId)
+
+    if (isNaN(quizIdNumber)) {
+      return NextResponse.json({ error: "Invalid quiz ID" }, { status: 400 })
+    }
+
     const quiz = await payload.findByID({
       collection: "quizzes",
-      id: validatedData.quizId,
+      id: quizIdNumber,
     })
 
     if (!quiz) {
@@ -54,7 +60,7 @@ export async function POST(request: NextRequest) {
     const attempt = await payload.create({
       collection: "quiz-attempts",
       data: {
-        quiz: validatedData.quizId,
+        quiz: quizIdNumber,
         user: userProfile.id,
         answers: validatedData.answers,
         score,
