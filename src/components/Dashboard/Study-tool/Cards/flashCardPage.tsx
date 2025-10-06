@@ -553,6 +553,84 @@ export default function ProjectsPage() {
     }
   }
 
+  const generateFlashcardsForProject = async (project: Project) => {
+    if (!project.documents || project.documents.length === 0) {
+      toast({
+        title: "No Documents",
+        description: "This project has no documents to generate flashcards from.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const readyDocuments = project.documents.filter((doc: Document) => doc.status === "ready")
+
+    if (readyDocuments.length === 0) {
+      toast({
+        title: "No Ready Documents",
+        description: "This project has no ready documents to generate flashcards from.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setGeneratingFlashcards((prev) => new Set(prev).add(project.id))
+
+    try {
+      console.log("Starting flashcard generation for project:", project.name)
+      console.log("Ready documents:", readyDocuments)
+      console.log("Using document ID:", readyDocuments[0].id)
+
+      const requestBody = {
+        subject: project.category || "Mixed",
+        documentId: readyDocuments[0].id,
+        projectId: project.id,
+      }
+      console.log("Request body:", requestBody)
+
+      const response = await fetch("/api/flashcards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      })
+
+      console.log("Response status:", response.status)
+      console.log("Response ok:", response.ok)
+
+      const data = await response.json()
+      console.log("Response data:", data)
+
+      if (data.success && Array.isArray(data.flashcards)) {
+        console.log("Successfully generated flashcards:", data.flashcards.length)
+        toast({
+          title: "Success!",
+          description: `Generated ${data.flashcards.length} flashcards from ${project.name}`,
+        })
+        router.push("/dashboard/flash-cards-cards")
+      } else {
+        console.error("Failed to generate flashcards:", data.error)
+        toast({
+          title: "Generation Failed",
+          description: data.error || "Failed to generate flashcards",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Failed to generate flashcards:", error)
+      toast({
+        title: "Error",
+        description: "Failed to generate flashcards. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setGeneratingFlashcards((prev) => {
+        const newSet = new Set(prev)
+        newSet.delete(project.id)
+        return newSet
+      })
+    }
+  }
+
   const getFileIcon = (type: string) => {
     if (type.includes("pdf")) return <FileText className="w-6 h-6 text-red-500" />
     if (type.includes("word") || type.includes("document")) return <FileText className="w-6 h-6 text-blue-500" />
