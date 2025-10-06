@@ -4,23 +4,32 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
-import { FileText, ArrowRight, X, Presentation, ImageIcon, File, Trash2, Sparkles, FolderPlus, CalendarIcon, Upload } from "lucide-react"
-import { useState, useEffect } from "react"
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  FolderPlus,
+  FileText,
+  ArrowRight,
+  X,
+  Presentation,
+  ImageIcon,
+  File,
+  Trash2,
+  Sparkles,
+  Plus,
+  ChevronDown,
+} from "lucide-react"
+import { useState, useEffect, useMemo } from "react"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
 import { Input } from "@/components/ui/input"
 import { toast } from "@/components/ui/use-toast"
 import { useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
+import FlashcardsStudy from "./flashcards-study"
 import ManualFlashCardCreator from "./Manual/ManualFlashCardCreator"
-import UnderDevelopmentBanner from "@/components/common/underDevelopment"
 import PreviewCards from "./Previews/PreviewCards"
-import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { cn } from "@/lib/utils"
-import { Popover, PopoverTrigger, PopoverContent } from "@radix-ui/react-popover"
-import { Calendar } from "@/components/ui/calendar"
-import { format } from "date-fns";
+import UnderDevelopmentBanner from "@/components/common/underDevelopment"
+
 
 interface Project {
   id: string
@@ -60,10 +69,126 @@ export default function ProjectsPage() {
   const [deletingProjects, setDeletingProjects] = useState<Set<string>>(new Set())
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
   const [deleteConfirmationText, setDeleteConfirmationText] = useState("")
-  const [generatingFlashcards, setGeneratingFlashcards] = useState<Set<string>>(new Set())
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
-  
-  
+  const [generatingFlashcards, setGeneratingFlashcards] = useState(false)
+
+  const [generatedFlashcards, setGeneratedFlashcards] = useState<any[]>([])
+  const [showFlashcardsStudy, setShowFlashcardsStudy] = useState(false)
+
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([])
+  const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([])
+  const [projectDropdownOpen, setProjectDropdownOpen] = useState(false)
+  const [documentDropdownOpen, setDocumentDropdownOpen] = useState(false)
+
+  const availableDocuments = useMemo(() => {
+    if (selectedProjectIds.length === 0) return []
+
+    const docs: Array<Document & { projectName: string }> = []
+    projects.forEach((project) => {
+      if (selectedProjectIds.includes(project.id) && project.documents) {
+        project.documents.forEach((doc) => {
+          docs.push({ ...doc, projectName: project.name })
+        })
+      }
+    })
+    return docs
+  }, [projects, selectedProjectIds])
+
+  const toggleProjectSelection = (projectId: string) => {
+    setSelectedProjectIds((prev) => {
+      if (prev.includes(projectId)) {
+        return prev.filter((id) => id !== projectId)
+      }
+      return [...prev, projectId]
+    })
+    // Clear document selection when projects change
+    setSelectedDocumentIds([])
+  }
+
+  const toggleDocumentSelection = (documentId: string) => {
+    setSelectedDocumentIds((prev) => {
+      if (prev.includes(documentId)) {
+        return prev.filter((id) => id !== documentId)
+      }
+      return [...prev, documentId]
+    })
+  }
+
+  const toggleAllProjects = () => {
+    if (selectedProjectIds.length === projects.length) {
+      setSelectedProjectIds([])
+      setSelectedDocumentIds([])
+    } else {
+      setSelectedProjectIds(projects.map((p) => p.id))
+    }
+  }
+
+  const toggleAllDocuments = () => {
+    if (selectedDocumentIds.length === availableDocuments.length) {
+      setSelectedDocumentIds([])
+    } else {
+      setSelectedDocumentIds(availableDocuments.map((d) => d.id))
+    }
+  }
+
+  const generateFlashcardsFromSelection = async () => {
+    if (selectedDocumentIds.length === 0) {
+      toast({
+        title: "No Documents Selected",
+        description: "Please select at least one document to generate flashcards.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setGeneratingFlashcards(true)
+
+    try {
+      console.log("Starting flashcard generation for documents:", selectedDocumentIds)
+
+      const requestBody = {
+        subject: "Mixed",
+        documentIds: selectedDocumentIds,
+        projectIds: selectedProjectIds,
+      }
+      console.log("Request body:", requestBody)
+
+      const response = await fetch("/api/flashcards", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      })
+
+      console.log("Response status:", response.status)
+      const data = await response.json()
+      console.log("Response data:", data)
+
+      if (data.success && Array.isArray(data.flashcards)) {
+        console.log("Successfully generated flashcards:", data.flashcards.length)
+        toast({
+          title: "Success!",
+          description: `Generated ${data.flashcards.length} flashcards from ${selectedDocumentIds.length} document(s)`,
+        })
+        setGeneratedFlashcards(data.flashcards)
+        setShowFlashcardsStudy(true)
+      } else {
+        console.error("Failed to generate flashcards:", data.error)
+        toast({
+          title: "Generation Failed",
+          description: data.error || "Failed to generate flashcards",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Failed to generate flashcards:", error)
+      toast({
+        title: "Error",
+        description: "Failed to generate flashcards. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setGeneratingFlashcards(false)
+    }
+  }
 
   const fetchProjects = async () => {
     if (status !== "authenticated") return
@@ -557,565 +682,222 @@ export default function ProjectsPage() {
     return <div className="text-center py-12 text-gray-500">Please sign in to view your projects.</div>
   }
 
+  if (showFlashcardsStudy && generatedFlashcards.length > 0) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 via-blue-50 to-pink-50 dark:from-gray-900 dark:via-gray-800 dark:to-gray-900">
+        <div className="container mx-auto py-8 px-4">
+          <FlashcardsStudy
+            flashcards={generatedFlashcards}
+            onBack={() => {
+              setShowFlashcardsStudy(false)
+              setGeneratedFlashcards([])
+            }}
+          />
+        </div>
+      </div>
+    )
+  }
+
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+    <div>
       <div className="container mx-auto py-8">
         <UnderDevelopmentBanner />
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Your Falshcard Projects</h1>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Your Flashcard Projects</h1>
             <p className="text-gray-600 dark:text-gray-300">
               View and manage all of your study flashcard projects in one place.
             </p>
           </div>
           <div className="flex gap-3">
-            <PreviewCards className="bg-purple-700 text-white" />
+            <PreviewCards className="bg-purple-700 text-white hover:bg-purple-800" />
             <ManualFlashCardCreator />
           </div>
         </div>
       </div>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-            {projects.map((project) => (
-              <Card key={project.id} className="hover:shadow-lg transition-shadow">
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-                  <CardTitle className="text-xl font-bold">{project.name}</CardTitle>
-                  <div className="flex items-center gap-2">
-                    <Badge variant={project.status === "completed" ? "default" : "secondary"}>{project.status}</Badge>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => setProjectToDelete(project)}
-                      disabled={deletingProjects.has(project.id)}
-                      className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
-                      title="Delete project"
-                    >
-                      {deletingProjects.has(project.id) ? (
-                        <div className="w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
-                      ) : (
-                        <Trash2 className="w-4 h-4" />
-                      )}
-                    </Button>
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <CardDescription className="mb-4">{project.description}</CardDescription>
-                  <div className="flex items-center gap-2 text-sm text-gray-500 mb-4">
-                    <FileText className="h-4 w-4" />
-                    <span>{project.file_count} Documents</span>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-xs text-gray-500">
-                      <span>Progress</span>
-                      <span>{project.progress}%</span>
-                    </div>
-                    <Progress value={project.progress} className="h-2" />
-                  </div>
-                  <Button
-                    variant="outline"
-                    className="mt-6 w-full gap-2 bg-transparent"
-                    onClick={() => setSelectedProject(project)}
-                  >
-                    View Project <ArrowRight className="h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    className="mt-2 w-full gap-2 bg-transparent hover:bg-blue-400 hover:text-white"
-                    onClick={() => generateFlashcardsForProject(project)}
-                    disabled={generatingFlashcards.has(project.id)}
-                  >
-                    {generatingFlashcards.has(project.id) ? (
-                      <>
-                        <div className="w-4 h-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                        Generating...
-                      </>
-                    ) : (
-                      <>
-                        <Sparkles className="w-4 h-4" />
-                        Generate AI Flashcards
-                      </>
-                    )}
-                  </Button>
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        }
-      </main>
+      <main className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <Card className="backdrop-blur-sm border-white dark:border-gray-950">
+          <CardHeader className="text-center">
+            <CardTitle className="text-2xl font-bold">Start a Flashcard Session</CardTitle>
+            <CardDescription className="text-base">
+              Flashcard sessions use <span className="text-blue-600 font-semibold">Spaced Repetition</span>, and
+              prioritize cards you answer incorrectly so you can focus on the areas you already struggle with.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            {/* Project Selector */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Select Projects</Label>
+              <div className="relative">
+                <button
+                  onClick={() => setProjectDropdownOpen(!projectDropdownOpen)}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-950 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                >
+                  <span className="text-gray-700 dark:text-gray-200">
+                    {selectedProjectIds.length === 0
+                      ? "Select projects"
+                      : selectedProjectIds.length === projects.length
+                        ? "All projects selected"
+                        : `${selectedProjectIds.length} project(s) selected`}
+                  </span>
+                  <ChevronDown
+                    className={`w-5 h-5 text-gray-500 transition-transform ${projectDropdownOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
 
-      {selectedProject && (
-        <Dialog
-          open={!!selectedProject}
-          onOpenChange={() => {
-            setSelectedProject(null)
-            setFiles([])
-          }}
-        >
-          <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>{selectedProject.name}</DialogTitle>
-              <DialogDescription>{selectedProject.description}</DialogDescription>
-            </DialogHeader>
-            <div className="p-4 space-y-6">
-              <Card>
-                <CardHeader>
-                  <CardTitle>Project Overview</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <Label>Status</Label>
-                      <Badge
-                        className="mt-1"
-                        variant={selectedProject.status === "completed" ? "default" : "secondary"}
-                      >
-                        {selectedProject.status}
-                      </Badge>
-                    </div>
-                    <div>
-                      <Label>Category</Label>
-                      <div className="mt-1 font-medium">{selectedProject.category || "N/A"}</div>
-                    </div>
-                    <div>
-                      <Label>Study Goal</Label>
-                      <div className="mt-1 font-medium">{selectedProject.study_goal || "N/A"}</div>
-                    </div>
-                    <div>
-                      <Label>Estimated Hours</Label>
-                      <div className="mt-1 font-medium">{selectedProject.estimated_hours || "N/A"} hours</div>
-                    </div>
-                  </div>
-                  <div className="space-y-1 mt-4">
-                    <div className="flex justify-between text-xs text-gray-500">
-                      <span>Progress</span>
-                      <span>{selectedProject.progress}%</span>
-                    </div>
-                    <Progress value={selectedProject.progress} className="h-2" />
-                  </div>
-                </CardContent>
-              </Card>
-
-              <Card>
-                <CardHeader>
-                  <CardTitle>Documents</CardTitle>
-                  <CardDescription>Files associated with this project.</CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {projectFiles.length > 0 && (
-                      <div className="space-y-4">
-                        <div className="flex items-center justify-between">
-                          <h4 className="text-sm font-medium">Files Ready to Upload ({projectFiles.length})</h4>
-                          <div className="flex gap-2">
-                            <Button variant="ghost" size="sm" onClick={() => setProjectFiles([])} className="text-xs">
-                              Clear All
-                            </Button>
-                            <Button
-                              size="sm"
-                              onClick={() => uploadFilesToProject(selectedProject.id)}
-                              disabled={uploadingFiles}
-                              className="text-xs"
-                            >
-                              {uploadingFiles ? "Uploading..." : "Upload Files"}
-                            </Button>
-                          </div>
-                        </div>
-                        {projectFiles.map((file, index) => (
-                          <div
-                            key={index}
-                            className="flex items-center gap-4 p-3 border rounded-lg bg-blue-50 dark:bg-blue-950/20"
-                          >
-                            <div className="flex-shrink-0">{getFileIcon(file.type)}</div>
-                            <div className="flex-1 min-w-0">
-                              <p className="font-medium text-sm truncate">{file.name}</p>
-                              <p className="text-xs text-gray-500">{formatFileSize(file.size)}</p>
-                            </div>
-                            <Badge variant="outline" className="text-xs">
-                              Ready
-                            </Badge>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              onClick={() => removeProjectFile(index)}
-                              className="flex-shrink-0"
-                            >
-                              <X className="w-4 h-4" />
-                            </Button>
-                          </div>
-                        ))}
+                {projectDropdownOpen && (
+                  <div className="absolute z-10 w-full mt-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                    <div className="p-3 border-b border-gray-200 dark:border-gray-600">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="select-all-projects"
+                          checked={selectedProjectIds.length === projects.length && projects.length > 0}
+                          onCheckedChange={toggleAllProjects}
+                        />
+                        <label htmlFor="select-all-projects" className="text-sm font-medium cursor-pointer">
+                          Select All
+                        </label>
                       </div>
-                    )}
-
-                    {selectedProject.documents && selectedProject.documents.length > 0 ? (
-                      <div className="space-y-4">
-                        <h4 className="text-sm font-medium">
-                          Uploaded Documents ({selectedProject.documents?.length || 0})
-                        </h4>
-                        {selectedProject.documents?.map((doc: Document, index: number) => (
-                          <div
-                            key={doc.id || index}
-                            className="flex items-center justify-between p-3 border rounded-lg"
-                          >
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 bg-primary/10 rounded flex items-center justify-center">
-                                <FileText className="w-4 h-4 text-primary" />
-                              </div>
+                    </div>
+                    {projects.map((project) => (
+                      <div
+                        key={project.id}
+                        className="p-3 hover:bg-gray-50 dark:hover:bg-gray-600 border-b border-gray-100 dark:border-gray-600 last:border-b-0"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`project-${project.id}`}
+                            checked={selectedProjectIds.includes(project.id)}
+                            onCheckedChange={() => toggleProjectSelection(project.id)}
+                          />
+                          <label htmlFor={`project-${project.id}`} className="flex-1 cursor-pointer">
+                            <div className="flex items-center justify-between">
                               <div>
-                                <p className="font-medium text-sm">{doc.title || doc.file_name}</p>
-                                <p className="text-xs text-gray-500">
-                                  {doc.createdAt ? formatUploadTime(doc.createdAt) : "Recently uploaded"}
-                                  {doc.file_size && ` • ${formatFileSize(doc.file_size)}`}
+                                <p className="text-sm font-medium text-gray-900 dark:text-white">{project.name}</p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">
+                                  {project.file_count} document(s)
                                 </p>
                               </div>
+                              <Badge variant="secondary" className="text-xs">
+                                {project.category || "General"}
+                              </Badge>
                             </div>
-                            <div className="flex items-center gap-2">
-                              <Badge variant={doc.status === "ready" ? "default" : "secondary"}>{doc.status}</Badge>
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                onClick={() => deleteDocument(doc.id)}
-                                disabled={deletingDocuments.has(doc.id)}
-                                className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50"
-                                title="Delete document"
-                              >
-                                {deletingDocuments.has(doc.id) ? (
-                                  <div className="w-4 h-4 border-2 border-red-500 border-t-transparent rounded-full animate-spin" />
-                                ) : (
-                                  <Trash2 className="w-4 h-4" />
-                                )}
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-center py-8 text-gray-500">
-                        <FileText className="w-12 h-12 mx-auto mb-4 text-gray-300" />
-                        <p>No documents in this project yet.</p>
-                        <p className="text-sm">Upload files to get started.</p>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-
-      {projectToDelete && (
-        <Dialog
-          open={!!projectToDelete}
-          onOpenChange={() => {
-            setProjectToDelete(null)
-            setDeleteConfirmationText("")
-          }}
-        >
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle className="text-red-600">Delete Project</DialogTitle>
-              <DialogDescription className="text-gray-600">
-                Are you sure you want to delete "{projectToDelete.name}"?
-              </DialogDescription>
-            </DialogHeader>
-            <div className="py-4">
-              <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
-                <div className="flex items-start gap-3">
-                  <div className="w-6 h-6 bg-red-100 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Trash2 className="w-3 h-3 text-red-600" />
-                  </div>
-                  <div>
-                    <h4 className="font-medium text-red-800 mb-1">This action cannot be undone</h4>
-                    <p className="text-sm text-red-700">
-                      This will permanently delete all data associated with this project, including:
-                    </p>
-                    <ul className="text-sm text-red-700 mt-2 ml-4 list-disc">
-                      <li>All uploaded documents ({projectToDelete.file_count} files)</li>
-                      <li>Project settings and progress</li>
-                      <li>Generated flashcards and quizzes</li>
-                      <li>Chat history and AI interactions</li>
-                    </ul>
-                  </div>
-                </div>
-              </div>
-              <p className="text-sm text-gray-600">
-                Type the project name <strong>"{projectToDelete.name}"</strong> to confirm deletion:
-              </p>
-              <Input
-                className="mt-2"
-                placeholder={`Type "${projectToDelete.name}" to confirm`}
-                value={deleteConfirmationText}
-                onChange={(e) => {
-                  console.log("Confirmation text changed:", e.target.value)
-                  setDeleteConfirmationText(e.target.value)
-                }}
-              />
-            </div>
-            <div className="flex justify-end gap-2">
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setProjectToDelete(null)
-                  setDeleteConfirmationText("")
-                }}
-              >
-                Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  console.log("Delete button clicked for project:", projectToDelete.name)
-                  deleteProject(projectToDelete.id)
-                }}
-                disabled={deleteConfirmationText !== projectToDelete.name}
-              >
-                Delete Project
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-      )}
-      <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
-        <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
-                  <DialogHeader>
-                    <DialogTitle>Create New Project</DialogTitle>
-                    <DialogDescription>
-                      Organize your study materials, set goals, and unlock powerful AI study tools.
-                    </DialogDescription>
-                  </DialogHeader>
-                  <div className="p-4 space-y-6">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Project Information</CardTitle>
-                        <CardDescription>Tell us a little about your new study project.</CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <div>
-                          <Label htmlFor="projectName">
-                            Project Name <span className="text-red-500">*</span>
-                          </Label>
-                          <Input
-                            id="projectName"
-                            placeholder="e.g., Biology Midterm Prep"
-                            value={projectName}
-                            onChange={(e) => setProjectName(e.target.value)}
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="description">Description</Label>
-                          <Textarea
-                            id="description"
-                            placeholder="A brief description of your project."
-                            value={description}
-                            onChange={(e) => setDescription(e.target.value)}
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="category">Category</Label>
-                          <Select value={category} onValueChange={setCategory}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a category" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="mathematics">Mathematics</SelectItem>
-                              <SelectItem value="science">Science</SelectItem>
-                              <SelectItem value="history">History</SelectItem>
-                              <SelectItem value="literature">Literature</SelectItem>
-                              <SelectItem value="computer_science">Computer Science</SelectItem>
-                              <SelectItem value="languages">Languages</SelectItem>
-                              <SelectItem value="business">Business</SelectItem>
-                              <SelectItem value="other">Other</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div>
-                          <Label htmlFor="goal">Study Goal</Label>
-                          <Select value={studyGoal} onValueChange={setStudyGoal}>
-                            <SelectTrigger>
-                              <SelectValue placeholder="Select a study goal" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="exam_preparation">Exam Preparation</SelectItem>
-                              <SelectItem value="course_completion">Course Completion</SelectItem>
-                              <SelectItem value="general_knowledge">General Knowledge</SelectItem>
-                              <SelectItem value="skill_development">Skill Development</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </CardContent>
-                    </Card>
-      
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Timeline & Goals</CardTitle>
-                        <CardDescription>Set a target and track your progress.</CardDescription>
-                      </CardHeader>
-                      <CardContent className="space-y-4">
-                        <div>
-                          <Label htmlFor="targetDate">Target Completion Date</Label>
-                          <Popover>
-                            <PopoverTrigger asChild>
-                              <Button
-                                variant={"outline"}
-                                className={cn(
-                                  "w-full justify-start text-left font-normal",
-                                  !targetDate && "text-muted-foreground",
-                                )}
-                              >
-                                <CalendarIcon className="mr-2 h-4 w-4" />
-                                {targetDate ? format(targetDate, "PPP") : <span>Pick a date</span>}
-                              </Button>
-                            </PopoverTrigger>
-                            <PopoverContent className="w-auto p-0">
-                              <Calendar mode="single" 
-                              selected={targetDate} onSelect={setTargetDate} initialFocus />
-                            </PopoverContent>
-                          </Popover>
-                        </div>
-                        <div>
-                          <Label htmlFor="estimatedHours">Estimated Study Hours</Label>
-                          <Input
-                            id="estimatedHours"
-                            type="number"
-                            placeholder="e.g., 20"
-                            value={estimatedHours}
-                            onChange={(e) => setEstimatedHours(e.target.value)}
-                          />
-                        </div>
-                        <div className="space-y-2">
-                          <h4 className="text-sm font-medium">AI-powered tools you&apos;ll get:</h4>
-                          <div className="flex gap-2 flex-wrap">
-                            <Badge variant="secondary">Flashcards</Badge>
-                            <Badge variant="secondary">Quizzes</Badge>
-                            <Badge variant="secondary">AI Chat</Badge>
-                            <Badge variant="secondary">Exam Simulator</Badge>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-      
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>File Upload</CardTitle>
-                        <CardDescription>Upload your documents to create your project materials.</CardDescription>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-2 mb-6">
-                          <h4 className="text-sm font-medium">Supported File Types</h4>
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                            <div className="flex items-center gap-2 p-3 border rounded-lg">
-                              <FileText className="w-6 h-6 text-red-500" />
-                              <div>
-                                <p className="font-medium text-sm">PDF</p>
-                                <p className="text-xs text-gray-500">Documents</p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 p-3 border rounded-lg">
-                              <FileText className="w-6 h-6 text-blue-500" />
-                              <div>
-                                <p className="font-medium text-sm">DOCX</p>
-                                <p className="text-xs text-gray-500">Word Documents</p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 p-3 border rounded-lg">
-                              <Presentation className="w-6 h-6 text-orange-500" />
-                              <div>
-                                <p className="font-medium text-sm">PPTX</p>
-                                <p className="text-xs text-gray-500">Presentations</p>
-                              </div>
-                            </div>
-                            <div className="flex items-center gap-2 p-3 border rounded-lg">
-                              <ImageIcon className="w-6 h-6 text-green-500" />
-                              <div>
-                                <p className="font-medium text-sm">Images</p>
-                                <p className="text-xs text-gray-500">JPG, PNG, etc.</p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-      
-                        <div className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors`}>
-                          <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Drop your files here</h3>
-                          <p className="text-gray-600 dark:text-gray-300 mb-4">
-                            or click to browse and select multiple files
-                          </p>
-                          <input
-                            type="file"
-                            multiple
-                            accept=".pdf,.docx,.pptx,.jpg,.jpeg,.png,.gif,.webp"
-                            onChange={(e) => {
-                              if (e.target.files) {
-                                handleFileUpload(e.target.files)
-                              }
-                            }}
-                            className="hidden"
-                            id="file-upload"
-                          />
-                          <label htmlFor="file-upload">
-                            <Button asChild>
-                              <span className="cursor-pointer">Browse Files</span>
-                            </Button>
                           </label>
-                          <p className="text-xs text-gray-500 mt-2">
-                            Maximum file size: 50MB per file • Select multiple files at once
-                          </p>
                         </div>
-      
-                        {files.length > 0 && (
-                          <div className="mt-6 space-y-4">
-                            <div className="flex items-center justify-between">
-                              <h4 className="text-sm font-medium">Selected Files ({files.length})</h4>
-                              <Button variant="ghost" size="sm" onClick={() => setFiles([])} className="text-xs">
-                                Clear All
-                              </Button>
-                            </div>
-                            {files.map((file, index) => (
-                              <div key={index} className="flex items-center gap-4 p-4 border rounded-lg">
-                                <div className="flex-shrink-0">{getFileIcon(file.type)}</div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-medium text-sm truncate">{file.name}</p>
-                                  <p className="text-xs text-gray-500">{formatFileSize(file.size)}</p>
-                                </div>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  onClick={() => removeFile(index)}
-                                  className="flex-shrink-0"
-                                >
-                                  <X className="w-4 h-4" />
-                                </Button>
-                              </div>
-                            ))}
-                          </div>
-                        )}
-                      </CardContent>
-                    </Card>
-      
-                    <div className="flex justify-end gap-2">
-                      <Button variant="outline" onClick={() => setIsCreateModalOpen(false)}>
-                        Cancel
-                      </Button>
-                      <Button onClick={handleCreateProjectForm} disabled={loadingProject}>
-                        {loadingProject ? "Creating..." : "Create Project"}
-                      </Button>
-                    </div>
+                      </div>
+                    ))}
                   </div>
-        </DialogContent>
-      </Dialog>
-      {projects.length === 0 ? (
-        <div className="flex flex-col items-center justify-center p-12 border-2 border-dashed rounded-lg bg-gray-50 dark:bg-gray-800">
-          <FolderPlus className="w-12 h-12 text-gray-400 dark:text-gray-500 mb-4" />
-          <p className="text-lg font-medium text-gray-700 dark:text-gray-300">You don't have any projects yet.</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Create your first project to get started!</p>
-          <Button onClick={() => setIsCreateModalOpen(true)} className="mt-6 gap-2">
-            <FolderPlus className="h-4 w-4" />
-            Create Project
-          </Button>
-        </div>
-      ):("")}
+                )}
+              </div>
+            </div>
+
+            {/* Document Selector */}
+            <div className="space-y-2">
+              <Label className="text-sm font-medium">Select Documents</Label>
+              <div className="relative">
+                <button
+                  onClick={() => setDocumentDropdownOpen(!documentDropdownOpen)}
+                  disabled={selectedProjectIds.length === 0}
+                  className="w-full flex items-center justify-between px-4 py-3 bg-white dark:bg-gray-950 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <span className="text-gray-700 dark:text-gray-200">
+                    {selectedProjectIds.length === 0
+                      ? "Select projects first"
+                      : selectedDocumentIds.length === 0
+                        ? "Select documents"
+                        : selectedDocumentIds.length === availableDocuments.length
+                          ? "All documents selected"
+                          : `${selectedDocumentIds.length} document(s) selected`}
+                  </span>
+                  <ChevronDown
+                    className={`w-5 h-5 text-gray-500 transition-transform ${documentDropdownOpen ? "rotate-180" : ""}`}
+                  />
+                </button>
+
+                {documentDropdownOpen && availableDocuments.length > 0 && (
+                  <div className="absolute z-10 w-full mt-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-64 overflow-y-auto">
+                    <div className="p-3 border-b border-gray-200 dark:border-gray-600">
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="select-all-documents"
+                          checked={
+                            selectedDocumentIds.length === availableDocuments.length && availableDocuments.length > 0
+                          }
+                          onCheckedChange={toggleAllDocuments}
+                        />
+                        <label htmlFor="select-all-documents" className="text-sm font-medium cursor-pointer">
+                          Select All
+                        </label>
+                      </div>
+                    </div>
+                    {availableDocuments.map((doc) => (
+                      <div
+                        key={doc.id}
+                        className="p-3 hover:bg-gray-50 dark:hover:bg-gray-600 border-b border-gray-100 dark:border-gray-600 last:border-b-0"
+                      >
+                        <div className="flex items-center space-x-2">
+                          <Checkbox
+                            id={`document-${doc.id}`}
+                            checked={selectedDocumentIds.includes(doc.id)}
+                            onCheckedChange={() => toggleDocumentSelection(doc.id)}
+                          />
+                          <label htmlFor={`document-${doc.id}`} className="flex-1 cursor-pointer">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <FileText className="w-4 h-4 text-blue-500" />
+                                <div>
+                                  <p className="text-sm font-medium text-gray-900 dark:text-white">
+                                    {doc.title || doc.file_name}
+                                  </p>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400">{doc.projectName}</p>
+                                </div>
+                              </div>
+                              <Badge variant={doc.status === "ready" ? "default" : "secondary"} className="text-xs">
+                                {doc.status}
+                              </Badge>
+                            </div>
+                          </label>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Flashcard Count Info */}
+            {selectedDocumentIds.length > 0 && (
+              <div className="text-center py-2">
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Your session will contain flashcards from{" "}
+                  <span className="font-bold text-gray-900 dark:text-white">{selectedDocumentIds.length}</span>{" "}
+                  document(s)
+                </p>
+              </div>
+            )}
+
+            {/* Generate Button */}
+            <Button
+              onClick={generateFlashcardsFromSelection}
+              disabled={selectedDocumentIds.length === 0 || generatingFlashcards}
+              className="w-full h-12 text-base font-semibold bg-black hover:bg-gray-800 text-white dark:bg-white dark:text-black dark:hover:bg-gray-200"
+            >
+              {generatingFlashcards ? (
+                <>
+                  <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
+                  Generating...
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-5 h-5 mr-2" />
+                  Generate AI Flashcards
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+      </main>
     </div>
   )
 }

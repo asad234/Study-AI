@@ -6,7 +6,8 @@ export const Media: CollectionConfig = {
     create: ({ req: { user } }) => !!user,
     update: ({ req: { user } }) => !!user,
     delete: ({ req: { user } }) => !!user,
-    read: ({ req: { user } }) => !!user,
+    // Change this line to allow unauthenticated read access
+    read: () => true,
   },
   fields: [
     {

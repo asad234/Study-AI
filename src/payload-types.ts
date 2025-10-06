@@ -29,6 +29,11 @@ export interface Media extends TypeWithID {
 
 // Documents collection
 export interface Document extends TypeWithID {
+  file_type: string
+  file_name: string
+  file_size: any
+  user: any
+  media_file: any
   title: string
   content?: any
   media?: Media[]
