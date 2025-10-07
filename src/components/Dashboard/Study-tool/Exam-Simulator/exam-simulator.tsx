@@ -1,417 +1,1207 @@
 "use client"
-import React, { useState, useEffect } from 'react';
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Clock, CheckCircle, RotateCcw, BookOpen } from 'lucide-react';
 
-interface Question {
-  id: number;
-  question: string;
-  options: string[];
-  correctAnswer: number;
-  explanation: string;
-  category: string;
+import { useState, useEffect } from "react"
+import { useSession } from "next-auth/react"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Progress } from "@/components/ui/progress"
+import { Badge } from "@/components/ui/badge"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { toast } from "@/hooks/use-toast"
+import { Clock, BookOpen, ChevronDown, Loader2, CheckCircle, XCircle, Award, ChevronLeft, ChevronRight, AlertCircle } from "lucide-react"
+import type { ExamQuestion } from "@/lib/exam-schema"
+
+interface Project {
+  id: string
+  name: string
+  documents: Document[]
 }
 
-const sampleQuestions: Question[] = [
-  {
-    id: 1,
-    question: "What is the capital of France?",
-    options: ["London", "Berlin", "Paris", "Madrid"],
-    correctAnswer: 2,
-    explanation: "Paris is the capital and most populous city of France.",
-    category: "Geography"
-  },
-  {
-    id: 2,
-    question: "Which of the following is a programming paradigm?",
-    options: ["Object-Oriented", "Functional", "Procedural", "All of the above"],
-    correctAnswer: 3,
-    explanation: "All three (Object-Oriented, Functional, and Procedural) are valid programming paradigms.",
-    category: "Computer Science"
-  },
-  {
-    id: 3,
-    question: "What is the largest planet in our solar system?",
-    options: ["Earth", "Mars", "Jupiter", "Saturn"],
-    correctAnswer: 2,
-    explanation: "Jupiter is the largest planet in our solar system, with a mass greater than all other planets combined.",
-    category: "Science"
-  },
-  {
-    id: 4,
-    question: "In which year did World War II end?",
-    options: ["1944", "1945", "1946", "1947"],
-    correctAnswer: 1,
-    explanation: "World War II ended in 1945 with the surrender of Japan in September.",
-    category: "History"
-  },
-  {
-    id: 5,
-    question: "What is the chemical symbol for gold?",
-    options: ["Go", "Gd", "Au", "Ag"],
-    correctAnswer: 2,
-    explanation: "Au is the chemical symbol for gold, derived from the Latin word 'aurum'.",
-    category: "Chemistry"
-  }
-];
+interface Document {
+  id: string
+  name: string
+}
 
-export default function ExamSimulator() {
-  const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [selectedAnswers, setSelectedAnswers] = useState<{[key: number]: number}>({});
-  const [timeLeft, setTimeLeft] = useState(1800); // 30 minutes
-  const [examStarted, setExamStarted] = useState(false);
-  const [examFinished, setExamFinished] = useState(false);
-  const [showResults, setShowResults] = useState(false);
+// ===== PARTIAL SCORING HELPER FUNCTIONS =====
+
+/**
+ * Calculate similarity between two strings (0-1 scale)
+ * Uses Levenshtein distance algorithm
+ */
+function calculateStringSimilarity(str1: string, str2: string): number {
+  const s1 = str1.toLowerCase().trim()
+  const s2 = str2.toLowerCase().trim()
+  
+  if (s1 === s2) return 1
+  if (s1.length === 0 || s2.length === 0) return 0
+  
+  const matrix: number[][] = []
+  
+  for (let i = 0; i <= s2.length; i++) {
+    matrix[i] = [i]
+  }
+  for (let j = 0; j <= s1.length; j++) {
+    matrix[0][j] = j
+  }
+  
+  for (let i = 1; i <= s2.length; i++) {
+    for (let j = 1; j <= s1.length; j++) {
+      if (s2.charAt(i - 1) === s1.charAt(j - 1)) {
+        matrix[i][j] = matrix[i - 1][j - 1]
+      } else {
+        matrix[i][j] = Math.min(
+          matrix[i - 1][j - 1] + 1,
+          matrix[i][j - 1] + 1,
+          matrix[i - 1][j] + 1
+        )
+      }
+    }
+  }
+  
+  const maxLength = Math.max(s1.length, s2.length)
+  const distance = matrix[s2.length][s1.length]
+  const similarity = 1 - distance / maxLength
+  
+  return Math.max(0, similarity)
+}
+
+/**
+ * Check if answer contains key concepts from the correct answer
+ */
+function calculateConceptualMatch(userAnswer: string, correctAnswer: string): number {
+  const userWords = userAnswer.toLowerCase().split(/\s+/).filter(w => w.length > 3)
+  const correctWords = correctAnswer.toLowerCase().split(/\s+/).filter(w => w.length > 3)
+  
+  if (correctWords.length === 0) return 0
+  
+  let matchCount = 0
+  correctWords.forEach(correctWord => {
+    if (userWords.some(userWord => 
+      userWord.includes(correctWord) || correctWord.includes(userWord)
+    )) {
+      matchCount++
+    }
+  })
+  
+  return matchCount / correctWords.length
+}
+
+/**
+ * Score written answers with partial credit
+ */
+function scoreWrittenAnswer(userAnswer: string, correctAnswer: string, maxMarks: number): number {
+  if (!userAnswer || userAnswer.trim().length === 0) return 0
+  
+  const similarity = calculateStringSimilarity(userAnswer, correctAnswer)
+  const conceptMatch = calculateConceptualMatch(userAnswer, correctAnswer)
+  
+  const combinedScore = (similarity * 0.4) + (conceptMatch * 0.6)
+  
+  let awardedMarks = 0
+  
+  if (combinedScore >= 0.9) {
+    awardedMarks = maxMarks
+  } else if (combinedScore >= 0.7) {
+    awardedMarks = maxMarks * 0.8
+  } else if (combinedScore >= 0.5) {
+    awardedMarks = maxMarks * 0.6
+  } else if (combinedScore >= 0.3) {
+    awardedMarks = maxMarks * 0.4
+  } else if (combinedScore >= 0.15) {
+    awardedMarks = maxMarks * 0.2
+  }
+  
+  return Math.round(awardedMarks * 10) / 10
+}
+
+/**
+ * Score multiple-select answers with partial credit
+ */
+function scoreMultipleSelect(
+  userAnswers: number[], 
+  correctAnswers: number[], 
+  maxMarks: number
+): number {
+  if (!userAnswers || userAnswers.length === 0) return 0
+  
+  const correctSet = new Set(correctAnswers)
+  const userSet = new Set(userAnswers)
+  
+  let correctSelections = 0
+  let wrongSelections = 0
+  
+  userAnswers.forEach(answer => {
+    if (correctSet.has(answer)) {
+      correctSelections++
+    } else {
+      wrongSelections++
+    }
+  })
+  
+  if (correctSelections === correctAnswers.length && wrongSelections === 0) {
+    return maxMarks
+  }
+  
+  const accuracy = correctSelections / correctAnswers.length
+  const penaltyRatio = wrongSelections / correctAnswers.length
+  
+  let awardedMarks = 0
+  
+  if (accuracy >= 0.75) {
+    awardedMarks = maxMarks * (0.5 + (accuracy * 0.5))
+  } else if (accuracy >= 0.5) {
+    awardedMarks = maxMarks * (0.3 + (accuracy * 0.4))
+  } else if (accuracy >= 0.25) {
+    awardedMarks = maxMarks * (accuracy * 0.5)
+  }
+  
+  const penalty = Math.min(penaltyRatio * 0.5, 0.5)
+  awardedMarks = awardedMarks * (1 - penalty)
+  
+  return Math.max(0, Math.round(awardedMarks * 10) / 10)
+}
+
+// ===== MAIN COMPONENT =====
+
+export default function ExamSimulatorPage() {
+  const { data: session, status } = useSession()
+  const [loading, setLoading] = useState(true)
+  const [projects, setProjects] = useState<Project[]>([])
+  const [selectedProjects, setSelectedProjects] = useState<string[]>([])
+  const [availableDocuments, setAvailableDocuments] = useState<Document[]>([])
+  const [selectedDocuments, setSelectedDocuments] = useState<string[]>([])
+  const [questionCount, setQuestionCount] = useState("20")
+  const [duration, setDuration] = useState("60")
+  const [selectedDifficulties, setSelectedDifficulties] = useState<string[]>(["easy", "medium", "hard"])
+  
+  const [selectedQuestionTypes, setSelectedQuestionTypes] = useState<string[]>([
+    "multiple-choice",
+    "true-false",
+    "multiple-select",
+    "written"
+  ])
+
+  const [examQuestions, setExamQuestions] = useState<ExamQuestion[]>([])
+  const [examId, setExamId] = useState<string>("")
+  const [showExam, setShowExam] = useState(false)
+  const [isGenerating, setIsGenerating] = useState(false)
+
+  const [currentQuestion, setCurrentQuestion] = useState(0)
+  const [answers, setAnswers] = useState<Record<string, any>>({})
+  const [timeLeft, setTimeLeft] = useState(3600)
+  const [examStarted, setExamStarted] = useState(false)
+  const [examFinished, setExamFinished] = useState(false)
+  const [showResults, setShowResults] = useState(false)
+  const [showReviewMode, setShowReviewMode] = useState(false)
+
+  const difficulties = ["easy", "medium", "hard"]
+  const questionTypes = [
+    { value: "multiple-choice", label: "Multiple Choice" },
+    { value: "true-false", label: "True/False" },
+    { value: "written", label: "Written Answer" },
+    { value: "multiple-select", label: "Multiple Select" },
+  ]
+
+  const fetchProjects = async () => {
+    if (status !== "authenticated") return
+
+    try {
+      const response = await fetch("/api/projects")
+      const data = await response.json()
+
+      if (data.success) {
+        setProjects(data.projects)
+      } else {
+        console.error("Failed to fetch projects:", data.error)
+      }
+    } catch (error) {
+      console.error("Error fetching projects:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
-    if (examStarted && !examFinished && timeLeft > 0) {
-      const timer = setInterval(() => {
-        setTimeLeft(prev => {
-          if (prev <= 1) {
-            setExamFinished(true);
-            setShowResults(true);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-      return () => clearInterval(timer);
+    if (status === "authenticated") {
+      fetchProjects()
+    } else if (status === "unauthenticated") {
+      setLoading(false)
     }
-  }, [examStarted, examFinished, timeLeft]);
+  }, [status])
 
-  const formatTime = (seconds: number) => {
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-  };
-
-  const handleAnswerSelect = (answerIndex: number) => {
-    setSelectedAnswers(prev => ({
-      ...prev,
-      [currentQuestion]: answerIndex
-    }));
-  };
-
-  const nextQuestion = () => {
-    if (currentQuestion < sampleQuestions.length - 1) {
-      setCurrentQuestion(prev => prev + 1);
-    }
-  };
-
-  const prevQuestion = () => {
-    if (currentQuestion > 0) {
-      setCurrentQuestion(prev => prev - 1);
-    }
-  };
-
-  const goToQuestion = (index: number) => {
-    setCurrentQuestion(index);
-  };
-
-  const finishExam = () => {
-    setExamFinished(true);
-    setShowResults(true);
-  };
-
-  const calculateScore = () => {
-    let correct = 0;
-    sampleQuestions.forEach((question, index) => {
-      if (selectedAnswers[index] === question.correctAnswer) {
-        correct++;
+  useEffect(() => {
+    const fetchDocuments = async () => {
+      if (selectedProjects.length === 0) {
+        setAvailableDocuments([])
+        setSelectedDocuments([])
+        return
       }
-    });
-    return {
-      correct,
-      total: sampleQuestions.length,
-      percentage: Math.round((correct / sampleQuestions.length) * 100)
-    };
-  };
 
-  const resetExam = () => {
-    setCurrentQuestion(0);
-    setSelectedAnswers({});
-    setTimeLeft(1800);
-    setExamStarted(false);
-    setExamFinished(false);
-    setShowResults(false);
-  };
+      try {
+        const documentPromises = selectedProjects.map((projectId) =>
+          fetch(`/api/projects/${projectId}/documents`).then((res) => res.json()),
+        )
+        const results = await Promise.all(documentPromises)
+        const allDocs = results.flatMap((result) => result.documents || [])
+        setAvailableDocuments(allDocs)
+      } catch (error) {
+        console.error("Failed to fetch documents:", error)
+        toast({
+          title: "Error",
+          description: "Failed to load documents",
+          variant: "destructive",
+        })
+      }
+    }
 
-  const startExam = () => {
-    setExamStarted(true);
-  };
+    fetchDocuments()
+  }, [selectedProjects])
 
-  const progress = ((currentQuestion + 1) / sampleQuestions.length) * 100;
-  const answeredCount = Object.keys(selectedAnswers).length;
+  const generateExam = async () => {
+    if (selectedDocuments.length === 0) {
+      toast({
+        title: "No documents selected",
+        description: "Please select at least one document to generate an exam.",
+        variant: "destructive",
+      })
+      return
+    }
 
-  if (!examStarted) {
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-blue-950 flex items-center justify-center p-4">
-        <Card className="w-full max-w-md">
-          <CardHeader className="text-center">
-            <div className="mx-auto mb-4 w-16 h-16 bg-blue-100 dark:bg-blue-900/50 rounded-full flex items-center justify-center">
-              <BookOpen className="w-8 h-8 text-blue-600 dark:text-blue-400" />
-            </div>
-            <CardTitle className="text-2xl">Study-AI Exam Simulator</CardTitle>
-            <CardDescription>
-              Test your knowledge with our interactive exam simulator
-            </CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="grid grid-cols-2 gap-4 text-sm">
-              <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                <div className="font-semibold">{sampleQuestions.length}</div>
-                <div className="text-gray-600 dark:text-gray-400">Questions</div>
-              </div>
-              <div className="text-center p-3 bg-gray-50 dark:bg-gray-800 rounded-lg">
-                <div className="font-semibold">30 min</div>
-                <div className="text-gray-600 dark:text-gray-400">Duration</div>
-              </div>
-            </div>
-            <Alert>
-              <AlertDescription>
-                You&apos;ll have 30 minutes to complete {sampleQuestions.length} questions. You can navigate between questions and change your answers before submitting.
-              </AlertDescription>
-            </Alert>
-          </CardContent>
-          <CardFooter>
-            <Button onClick={startExam} className="w-full" size="lg">
-              Start Exam
-            </Button>
-          </CardFooter>
-        </Card>
-      </div>
-    );
+    if (selectedQuestionTypes.length === 0) {
+      toast({
+        title: "No question types selected",
+        description: "Please select at least one question type.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const minQuestions = selectedQuestionTypes.length
+    if (Number.parseInt(questionCount) < minQuestions) {
+      toast({
+        title: "Not enough questions",
+        description: `You need at least ${minQuestions} questions for ${selectedQuestionTypes.length} question types. Please increase the question count.`,
+        variant: "destructive",
+      })
+      return
+    }
+
+    setIsGenerating(true)
+
+    try {
+      const requestBody = {
+        documentIds: selectedDocuments.map(String),
+        projectIds: selectedProjects.map(String),
+        questionCount: Number.parseInt(questionCount),
+        difficulties: selectedDifficulties,
+        duration: Number.parseInt(duration) * 60,
+        questionTypes: selectedQuestionTypes,
+      }
+
+      console.log('🚀 Sending exam generation request:', requestBody)
+
+      const response = await fetch("/api/exams", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      })
+
+      const data = await response.json()
+
+      if (data.success && data.exam) {
+        setExamQuestions(data.exam.questions)
+        setExamId(String(data.exam.id))
+        setTimeLeft(data.exam.duration)
+        setShowExam(true)
+        setExamStarted(true)
+        
+        const typeDistribution = data.metadata?.questionTypeDistribution || {}
+        const distributionText = Object.entries(typeDistribution)
+          .map(([type, count]) => `${type}: ${count}`)
+          .join(', ')
+        
+        toast({
+          title: "Exam generated successfully",
+          description: `Your exam with ${data.exam.questions.length} questions is ready! (${distributionText})`,
+        })
+      } else {
+        toast({
+          title: "Generation failed",
+          description: data.error || "Could not generate exam questions",
+          variant: "destructive",
+        })
+      }
+    } catch (error) {
+      console.error("Exam generation error:", error)
+      toast({
+        title: "Error",
+        description: "Failed to generate exam. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsGenerating(false)
+    }
   }
 
-  if (showResults) {
-    const score = calculateScore();
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-blue-950 p-4">
-        <div className="max-w-4xl mx-auto">
-          <Card className="mb-6">
-            <CardHeader className="text-center">
-              <div className="mx-auto mb-4 w-16 h-16 bg-green-100 dark:bg-green-900/50 rounded-full flex items-center justify-center">
-                <CheckCircle className="w-8 h-8 text-green-600 dark:text-green-400" />
+  const calculateResults = () => {
+    let correctCount = 0
+    let totalMarks = 0
+    let earnedMarks = 0
+    const questionScores: Record<string, { earned: number; max: number; status: string }> = {}
+
+    examQuestions.forEach((q) => {
+      totalMarks += q.marks
+      const userAnswer = answers[q.id]
+      
+      if (userAnswer === undefined || userAnswer === null || userAnswer === "") {
+        questionScores[q.id] = { earned: 0, max: q.marks, status: "unanswered" }
+        return
+      }
+      
+      if (q.type === "multiple-select") {
+        const correctAnswers = Array.isArray(q.correctAnswer) ? q.correctAnswer : []
+        const userAnswers = Array.isArray(userAnswer) ? userAnswer : []
+        
+        const isFullyCorrect = correctAnswers.length === userAnswers.length &&
+          correctAnswers.sort().every((val, idx) => val === userAnswers.sort()[idx])
+        
+        if (isFullyCorrect) {
+          correctCount++
+          earnedMarks += q.marks
+          questionScores[q.id] = { earned: q.marks, max: q.marks, status: "correct" }
+        } else {
+          const partialMarks = scoreMultipleSelect(userAnswers, correctAnswers, q.marks)
+          earnedMarks += partialMarks
+          questionScores[q.id] = { 
+            earned: partialMarks, 
+            max: q.marks, 
+            status: partialMarks > 0 ? "partial" : "incorrect" 
+          }
+        }
+      } else if (q.type === "written") {
+        const correctAnswerStr = typeof q.correctAnswer === "string" ? q.correctAnswer : ""
+        const userAnswerStr = typeof userAnswer === "string" ? userAnswer : ""
+        
+        const partialMarks = scoreWrittenAnswer(userAnswerStr, correctAnswerStr, q.marks)
+        earnedMarks += partialMarks
+        
+        if (partialMarks >= q.marks * 0.9) {
+          correctCount++
+          questionScores[q.id] = { earned: partialMarks, max: q.marks, status: "correct" }
+        } else {
+          questionScores[q.id] = { 
+            earned: partialMarks, 
+            max: q.marks, 
+            status: partialMarks > 0 ? "partial" : "incorrect" 
+          }
+        }
+      } else {
+        if (userAnswer === q.correctAnswer) {
+          correctCount++
+          earnedMarks += q.marks
+          questionScores[q.id] = { earned: q.marks, max: q.marks, status: "correct" }
+        } else {
+          questionScores[q.id] = { earned: 0, max: q.marks, status: "incorrect" }
+        }
+      }
+    })
+
+    return { 
+      correctCount, 
+      totalQuestions: examQuestions.length, 
+      earnedMarks: Math.round(earnedMarks * 10) / 10,
+      totalMarks,
+      percentage: totalMarks > 0 ? (earnedMarks / totalMarks) * 100 : 0,
+      questionScores
+    }
+  }
+
+  const handleFinishExam = async () => {
+    setExamFinished(true)
+    setExamStarted(false)
+    
+    const results = calculateResults()
+    
+    const formattedAnswers = examQuestions.map((q) => ({
+      questionId: q.id,
+      answer: answers[q.id] !== undefined ? answers[q.id] : null,
+      timeSpent: 0,
+    }))
+    
+    try {
+      const response = await fetch("/api/exams/attempt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          examId: examId,
+          answers: formattedAnswers,
+          totalTime: Number.parseInt(duration) * 60 - timeLeft,
+        })
+      })
+      
+      const data = await response.json()
+      
+      if (data.success) {
+        setShowResults(true)
+        toast({
+          title: "Exam Submitted Successfully",
+          description: `You scored ${results.percentage.toFixed(1)}% (${results.earnedMarks}/${results.totalMarks} marks)!`,
+        })
+      } else {
+        throw new Error(data.error || "Failed to submit")
+      }
+    } catch (error) {
+      console.error("Failed to submit exam:", error)
+      setShowResults(true)
+      toast({
+        title: "Submission Warning",
+        description: "Your answers couldn't be saved to the server, but you can still see your results.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  const renderQuestion = (question: ExamQuestion) => {
+    switch (question.type) {
+      case "multiple-choice":
+      case "true-false":
+        return (
+          <div className="space-y-3">
+            {question.options?.map((option, index) => (
+              <div
+                key={index}
+                className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                  answers[question.id] === index
+                    ? "border-purple-500 bg-purple-50 dark:bg-purple-950/50"
+                    : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
+                }`}
+                onClick={() => setAnswers({ ...answers, [question.id]: index })}
+              >
+                <div className="flex items-center space-x-3">
+                  <div
+                    className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
+                      answers[question.id] === index ? "border-purple-500 bg-purple-500" : "border-gray-300"
+                    }`}
+                  >
+                    {answers[question.id] === index && <div className="w-2 h-2 bg-white rounded-full" />}
+                  </div>
+                  <span>{option}</span>
+                </div>
               </div>
-              <CardTitle className="text-2xl">Exam Complete!</CardTitle>
-              <CardDescription>Here are your results</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-                <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg">
-                  <div className="text-2xl font-bold text-blue-600 dark:text-blue-400">{score.percentage}%</div>
-                  <div className="text-gray-600 dark:text-gray-400">Overall Score</div>
+            ))}
+          </div>
+        )
+
+      case "multiple-select":
+        return (
+          <div className="space-y-3">
+            {question.options?.map((option, index) => {
+              const selectedOptions = answers[question.id] || []
+              const isSelected = selectedOptions.includes(index)
+
+              return (
+                <div
+                  key={index}
+                  className={`p-4 border rounded-lg cursor-pointer transition-colors ${
+                    isSelected
+                      ? "border-purple-500 bg-purple-50 dark:bg-purple-950/50"
+                      : "border-gray-200 dark:border-gray-700 hover:border-gray-300"
+                  }`}
+                  onClick={() => {
+                    const newSelected = isSelected
+                      ? selectedOptions.filter((i: number) => i !== index)
+                      : [...selectedOptions, index]
+                    setAnswers({ ...answers, [question.id]: newSelected })
+                  }}
+                >
+                  <div className="flex items-center space-x-3">
+                    <Checkbox checked={isSelected} />
+                    <span>{option}</span>
+                  </div>
                 </div>
-                <div className="text-center p-4 bg-green-50 dark:bg-green-900/30 rounded-lg">
-                  <div className="text-2xl font-bold text-green-600 dark:text-green-400">{score.correct}</div>
-                  <div className="text-gray-600 dark:text-gray-400">Correct Answers</div>
-                </div>
-                <div className="text-center p-4 bg-red-50 dark:bg-red-900/30 rounded-lg">
-                  <div className="text-2xl font-bold text-red-600 dark:text-red-400">{score.total - score.correct}</div>
-                  <div className="text-gray-600 dark:text-gray-400">Incorrect Answers</div>
-                </div>
-              </div>
+              )
+            })}
+          </div>
+        )
+
+      case "written":
+        return (
+          <Textarea
+            placeholder="Type your answer here..."
+            value={answers[question.id] || ""}
+            onChange={(e) => setAnswers({ ...answers, [question.id]: e.target.value })}
+            className="min-h-[150px]"
+          />
+        )
+
+      default:
+        return null
+    }
+  }
+
+  const isAnswerCorrect = (question: ExamQuestion): boolean | "partial" | null => {
+    const userAnswer = answers[question.id]
+    
+    if (userAnswer === undefined || userAnswer === null || userAnswer === "") {
+      return false
+    }
+    
+    if (question.type === "multiple-select") {
+      const correctAnswers = Array.isArray(question.correctAnswer) ? question.correctAnswer : []
+      const userAnswers = Array.isArray(userAnswer) ? userAnswer : []
+      
+      const isFullyCorrect = correctAnswers.length === userAnswers.length &&
+        correctAnswers.sort().every((val, idx) => val === userAnswers.sort()[idx])
+      
+      if (isFullyCorrect) return true
+      
+      const hasAnyCorrect = userAnswers.some((ans: number) => correctAnswers.includes(ans))
+      return hasAnyCorrect ? "partial" : false
+      
+    } else if (question.type === "written") {
+      const correctAnswerStr = typeof question.correctAnswer === "string" ? question.correctAnswer : ""
+      const userAnswerStr = typeof userAnswer === "string" ? userAnswer : ""
+      
+      const similarity = calculateStringSimilarity(userAnswerStr, correctAnswerStr)
+      const conceptMatch = calculateConceptualMatch(userAnswerStr, correctAnswerStr)
+      const combinedScore = (similarity * 0.4) + (conceptMatch * 0.6)
+      
+      if (combinedScore >= 0.9) return true
+      if (combinedScore >= 0.3) return "partial"
+      return false
+      
+    } else {
+      return userAnswer === question.correctAnswer
+    }
+  }
+
+  const renderAnswerComparison = (question: ExamQuestion) => {
+    const correct = isAnswerCorrect(question)
+    const results = calculateResults()
+    const questionScore = results.questionScores?.[question.id]
+
+    switch (question.type) {
+      case "multiple-choice":
+      case "true-false":
+        return (
+          <div className="space-y-3">
+            {question.options?.map((option, index) => {
+              const isCorrect = question.correctAnswer === index
+              const isUserAnswer = answers[question.id] === index
               
-              <div className="space-y-4">
-                <h3 className="text-lg font-semibold">Question Review</h3>
-                {sampleQuestions.map((question, index) => {
-                  const userAnswer = selectedAnswers[index];
-                  const isCorrect = userAnswer === question.correctAnswer;
-                  const wasAnswered = userAnswer !== undefined;
-                  
-                  return (
-                    <Card key={question.id} className="border-l-4" style={{
-                      borderLeftColor: !wasAnswered ? '#6b7280' : isCorrect ? '#10b981' : '#ef4444'
-                    }}>
-                      <CardContent className="p-4">
-                        <div className="flex items-start justify-between mb-2">
-                          <Badge variant="outline">{question.category}</Badge>
-                          {!wasAnswered ? (
-                            <Badge variant="secondary">Not Answered</Badge>
-                          ) : isCorrect ? (
-                            <Badge className="bg-green-100 dark:bg-green-900/50 text-green-800 dark:text-green-200">Correct</Badge>
-                          ) : (
-                            <Badge variant="destructive">Incorrect</Badge>
-                          )}
-                        </div>
-                        <h4 className="font-medium mb-2">{question.question}</h4>
-                        <div className="text-sm space-y-1">
-                          {wasAnswered && (
-                            <p>
-                              <span className="font-medium">Your answer:</span>{' '}
-                              <span className={isCorrect ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
-                                {question.options[userAnswer]}
-                              </span>
-                            </p>
-                          )}
-                          {!isCorrect && (
-                            <p>
-                              <span className="font-medium">Correct answer:</span>{' '}
-                              <span className="text-green-600 dark:text-green-400">
-                                {question.options[question.correctAnswer]}
-                              </span>
-                            </p>
-                          )}
-                          <p className="text-gray-600 dark:text-gray-400 mt-2">
-                            <span className="font-medium">Explanation:</span> {question.explanation}
-                          </p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  );
-                })}
+              return (
+                <div
+                  key={index}
+                  className={`p-4 border-2 rounded-lg ${
+                    isCorrect
+                      ? "border-green-500 bg-green-50 dark:bg-green-950/30"
+                      : isUserAnswer
+                      ? "border-red-500 bg-red-50 dark:bg-red-950/30"
+                      : "border-gray-200 dark:border-gray-700"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      {isCorrect && <CheckCircle className="w-5 h-5 text-green-600" />}
+                      {isUserAnswer && !isCorrect && <XCircle className="w-5 h-5 text-red-600" />}
+                      <span className={isCorrect || isUserAnswer ? "font-semibold" : ""}>
+                        {option}
+                      </span>
+                    </span>
+                    {isCorrect && (
+                      <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300">
+                        Correct Answer
+                      </Badge>
+                    )}
+                    {isUserAnswer && !isCorrect && (
+                      <Badge variant="outline" className="bg-red-100 text-red-700 border-red-300">
+                        Your Answer
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )
+
+      case "multiple-select":
+        return (
+          <div className="space-y-3">
+            {questionScore && questionScore.status === "partial" && (
+              <div className="p-3 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 rounded-lg flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 text-yellow-600" />
+                <span className="text-sm text-yellow-900 dark:text-yellow-300">
+                  Partial Credit: {questionScore.earned}/{questionScore.max} marks - You got some correct answers!
+                </span>
+              </div>
+            )}
+            {question.options?.map((option, index) => {
+              const correctAnswers = Array.isArray(question.correctAnswer) ? question.correctAnswer : []
+              const userAnswers = Array.isArray(answers[question.id]) ? answers[question.id] : []
+              const isCorrect = correctAnswers.includes(index)
+              const isUserAnswer = userAnswers.includes(index)
+              
+              return (
+                <div
+                  key={index}
+                  className={`p-4 border-2 rounded-lg ${
+                    isCorrect && isUserAnswer
+                      ? "border-green-500 bg-green-50 dark:bg-green-950/30"
+                      : isUserAnswer && !isCorrect
+                      ? "border-red-500 bg-red-50 dark:bg-red-950/30"
+                      : isCorrect
+                      ? "border-orange-500 bg-orange-50 dark:bg-orange-950/30"
+                      : "border-gray-200 dark:border-gray-700"
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="flex items-center gap-2">
+                      {isCorrect && isUserAnswer && <CheckCircle className="w-5 h-5 text-green-600" />}
+                      {isUserAnswer && !isCorrect && <XCircle className="w-5 h-5 text-red-600" />}
+                      <span className={isCorrect || isUserAnswer ? "font-semibold" : ""}>
+                        {option}
+                      </span>
+                    </span>
+                    {isCorrect && isUserAnswer && (
+                      <Badge variant="outline" className="bg-green-100 text-green-700 border-green-300">
+                        ✓ Correct Selection
+                      </Badge>
+                    )}
+                    {isUserAnswer && !isCorrect && (
+                      <Badge variant="outline" className="bg-red-100 text-red-700 border-red-300">
+                        ✗ Wrong Selection
+                      </Badge>
+                    )}
+                    {isCorrect && !isUserAnswer && (
+                      <Badge variant="outline" className="bg-orange-100 text-orange-700 border-orange-300">
+                        ⚠ Missed Answer
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )
+
+      case "written":
+        const userAnswerStr = typeof answers[question.id] === "string" ? answers[question.id] : ""
+        const correctAnswerStr = typeof question.correctAnswer === "string" ? question.correctAnswer : ""
+        
+        const similarity = calculateStringSimilarity(userAnswerStr, correctAnswerStr)
+        const conceptMatch = calculateConceptualMatch(userAnswerStr, correctAnswerStr)
+        const combinedScore = (similarity * 0.4) + (conceptMatch * 0.6)
+        const scorePercentage = Math.round(combinedScore * 100)
+        
+        return (
+          <div className="space-y-4">
+            {questionScore && (
+              <div className={`p-4 border-2 rounded-lg ${
+                questionScore.status === "correct" 
+                  ? "bg-green-50 dark:bg-green-950/30 border-green-200"
+                  : questionScore.status === "partial"
+                  ? "bg-yellow-50 dark:bg-yellow-950/30 border-yellow-200"
+                  : "bg-red-50 dark:bg-red-950/30 border-red-200"
+              }`}>
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-semibold">
+                    {questionScore.status === "correct" ? "✓ Excellent Answer!" 
+                      : questionScore.status === "partial" ? "⚠ Partial Credit" 
+                      : "✗ Needs Improvement"}
+                  </span>
+                  <Badge variant="outline">
+                    {questionScore.earned}/{questionScore.max} marks ({scorePercentage}% match)
+                  </Badge>
+                </div>
+                <Progress value={scorePercentage} className="h-2" />
+              </div>
+            )}
+            
+            <div className="p-4 border-2 border-blue-200 bg-blue-50 dark:bg-blue-950/30 rounded-lg">
+              <p className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-2">📝 Your Answer:</p>
+              <p className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
+                {userAnswerStr || "No answer provided"}
+              </p>
+            </div>
+            
+            <div className="p-4 border-2 border-green-200 bg-green-50 dark:bg-green-950/30 rounded-lg">
+              <p className="text-sm font-semibold text-green-900 dark:text-green-300 mb-2">✓ Model Answer:</p>
+              <p className="text-gray-800 dark:text-gray-200 whitespace-pre-wrap">
+                {correctAnswerStr}
+              </p>
+            </div>
+            
+            {questionScore && questionScore.status === "partial" && (
+              <div className="p-3 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 rounded-lg">
+                <p className="text-sm text-blue-900 dark:text-blue-300">
+                  💡 <strong>Scoring Breakdown:</strong> Your answer captured {scorePercentage}% of the key concepts. 
+                  {scorePercentage >= 70 ? " Great work!" : scorePercentage >= 50 ? " You're on the right track!" : " Review the model answer for improvement."}
+                </p>
+              </div>
+            )}
+          </div>
+        )
+
+      default:
+        return null
+    }
+  }
+
+  if (status === "loading" || loading) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-100 dark:from-gray-900 dark:to-purple-950 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-gray-600 dark:text-gray-400">Loading projects...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (status === "unauthenticated") {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-purple-50 to-indigo-100 dark:from-gray-900 dark:to-purple-950 flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-600 dark:text-gray-400">Please sign in to access the exam simulator.</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Review Mode
+  if (showReviewMode && showResults && examFinished) {
+    const question = examQuestions[currentQuestion]
+    const correct = isAnswerCorrect(question)
+    const progress = ((currentQuestion + 1) / examQuestions.length) * 100
+    const results = calculateResults()
+    const questionScore = results.questionScores?.[question.id]
+
+    return (
+      <div>
+        <div className="max-w-4xl mx-auto space-y-4">
+          <Card>
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-4">
+                <Button variant="ghost" onClick={() => setShowReviewMode(false)} className="gap-2">
+                  <ChevronLeft className="w-4 h-4" />
+                  Back to Summary
+                </Button>
+                <Badge variant="outline" className="text-base">
+                  Question {currentQuestion + 1} of {examQuestions.length}
+                </Badge>
+              </div>
+              <Progress value={progress} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <div className="flex items-start justify-between gap-4">
+                <CardTitle className="text-xl">{question.question}</CardTitle>
+                <div className="flex gap-2 flex-shrink-0 flex-col items-end">
+                  <Badge 
+                    variant={correct === true ? "default" : correct === "partial" ? "secondary" : "destructive"}
+                    className={correct === "partial" ? "bg-yellow-100 text-yellow-800 border-yellow-300" : ""}
+                  >
+                    {correct === true ? "✓ Correct" : correct === "partial" ? "⚠ Partial Credit" : "✗ Incorrect"}
+                  </Badge>
+                  {questionScore && (
+                    <Badge variant="outline">
+                      {questionScore.earned}/{questionScore.max} marks
+                    </Badge>
+                  )}
+                </div>
+              </div>
+              <CardDescription>
+                Difficulty: {question.difficulty} • Type: {question.type.replace("-", " ")}
+              </CardDescription>
+            </CardHeader>
+            
+            <CardContent className="space-y-6">
+              {renderAnswerComparison(question)}
+              
+              <div className="p-4 bg-blue-50 dark:bg-blue-950/30 border border-blue-200 rounded-lg">
+                <p className="text-sm font-semibold text-blue-900 dark:text-blue-300 mb-2">📚 Explanation:</p>
+                <p className="text-gray-800 dark:text-gray-200">{question.explanation}</p>
               </div>
             </CardContent>
-            <CardFooter>
-              <Button onClick={resetExam} className="w-full" variant="outline">
-                <RotateCcw className="w-4 h-4 mr-2" />
-                Take Another Exam
+
+            <CardFooter className="flex justify-between">
+              <Button
+                variant="outline"
+                onClick={() => setCurrentQuestion(prev => Math.max(0, prev - 1))}
+                disabled={currentQuestion === 0}
+              >
+                <ChevronLeft className="mr-2 h-4 w-4" />
+                Previous
+              </Button>
+              <Button
+                onClick={() => {
+                  if (currentQuestion < examQuestions.length - 1) {
+                    setCurrentQuestion(prev => prev + 1)
+                  } else {
+                    setShowReviewMode(false)
+                    setCurrentQuestion(0)
+                  }
+                }}
+              >
+                {currentQuestion === examQuestions.length - 1 ? "Back to Summary" : "Next"}
+                {currentQuestion < examQuestions.length - 1 && <ChevronRight className="ml-2 h-4 w-4" />}
               </Button>
             </CardFooter>
           </Card>
         </div>
       </div>
-    );
+    )
   }
 
-  const question = sampleQuestions[currentQuestion];
+  // Results Summary Screen
+  if (showResults && examFinished) {
+    const results = calculateResults()
+    const passed = results.percentage >= 60
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 dark:from-gray-900 dark:to-blue-950 p-4">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <Card className="mb-6">
-          <CardContent className="p-4">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center space-x-4">
-                <Badge variant="outline">
-                  Question {currentQuestion + 1} of {sampleQuestions.length}
-                </Badge>
-                <Badge variant="secondary">{question.category}</Badge>
-              </div>
-              <div className="flex items-center space-x-2 text-lg font-mono">
-                <Clock className="w-5 h-5" />
-                <span className={timeLeft < 300 ? 'text-red-600 dark:text-red-400' : ''}>{formatTime(timeLeft)}</span>
-              </div>
-            </div>
-            <Progress value={progress} className="mb-2" />
-            <p className="text-sm text-gray-600 dark:text-gray-400">{answeredCount} of {sampleQuestions.length} questions answered</p>
-          </CardContent>
-        </Card>
+    const statusBreakdown = Object.values(results.questionScores || {}).reduce((acc, score) => {
+      acc[score.status] = (acc[score.status] || 0) + 1
+      return acc
+    }, {} as Record<string, number>)
 
-        <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-          {/* Question Panel */}
-          <div className="lg:col-span-3">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-xl">{question.question}</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  {question.options.map((option, index) => (
-                    <div
-                      key={index}
-                      className={`p-4 border rounded-lg cursor-pointer transition-colors ${
-                        selectedAnswers[currentQuestion] === index
-                          ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/50 dark:border-blue-400'
-                          : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-800'
-                      }`}
-                      onClick={() => handleAnswerSelect(index)}
-                    >
-                      <div className="flex items-center space-x-3">
-                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center ${
-                          selectedAnswers[currentQuestion] === index
-                            ? 'border-blue-500 bg-blue-500 dark:border-blue-400 dark:bg-blue-400'
-                            : 'border-gray-300 dark:border-gray-600'
-                        }`}>
-                          {selectedAnswers[currentQuestion] === index && (
-                            <div className="w-2 h-2 bg-white rounded-full" />
-                          )}
-                        </div>
-                        <span className="font-medium text-gray-700 dark:text-gray-300">
-                          {String.fromCharCode(65 + index)}.
-                        </span>
-                        <span className="text-gray-900 dark:text-gray-100">{option}</span>
-                      </div>
+    return (
+      <div>
+        <div className="max-w-4xl mx-auto">
+          <Card className="text-center">
+            <CardHeader>
+              <div className="flex justify-center mb-4">
+                {passed ? (
+                  <CheckCircle className="w-20 h-20 text-green-500" />
+                ) : (
+                  <XCircle className="w-20 h-20 text-orange-500" />
+                )}
+              </div>
+              <CardTitle className="text-3xl mb-2">
+                {passed ? "Congratulations!" : "Exam Completed"}
+              </CardTitle>
+              <CardDescription className="text-base">
+                {passed ? "You passed the exam!" : "Keep studying and try again!"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Score</p>
+                  <p className="text-2xl font-bold text-purple-600">{results.percentage.toFixed(1)}%</p>
+                </div>
+                <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Marks</p>
+                  <p className="text-2xl font-bold text-purple-600">{results.earnedMarks}/{results.totalMarks}</p>
+                </div>
+                <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Correct</p>
+                  <p className="text-2xl font-bold text-green-600">{results.correctCount}/{results.totalQuestions}</p>
+                </div>
+                <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow-sm">
+                  <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Time</p>
+                  <p className="text-2xl font-bold text-blue-600">
+                    {Math.floor((Number.parseInt(duration) * 60 - timeLeft) / 60)}m
+                  </p>
+                </div>
+              </div>
+
+              {statusBreakdown.partial > 0 && (
+                <div className="p-4 bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 rounded-lg">
+                  <p className="text-sm font-semibold text-yellow-900 dark:text-yellow-300 mb-2">💫 Partial Credit Awarded</p>
+                  <div className="grid grid-cols-3 gap-4 text-center">
+                    <div>
+                      <p className="text-2xl font-bold text-green-600">{statusBreakdown.correct || 0}</p>
+                      <p className="text-xs text-gray-600">Fully Correct</p>
                     </div>
-                  ))}
-                </div>
-              </CardContent>
-              <CardFooter className="flex justify-between">
-                <Button
-                  variant="outline"
-                  onClick={prevQuestion}
-                  disabled={currentQuestion === 0}
-                >
-                  Previous
-                </Button>
-                <div className="space-x-2">
-                  {currentQuestion === sampleQuestions.length - 1 ? (
-                    <Button onClick={finishExam} className="bg-green-600 hover:bg-green-700 dark:bg-green-700 dark:hover:bg-green-800">
-                      Finish Exam
-                    </Button>
-                  ) : (
-                    <Button onClick={nextQuestion}>
-                      Next
-                    </Button>
-                  )}
-                </div>
-              </CardFooter>
-            </Card>
-          </div>
-
-          {/* Navigation Panel */}
-          <div className="lg:col-span-1">
-            <Card className="sticky top-4">
-              <CardHeader>
-                <CardTitle className="text-lg">Question Navigation</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="grid grid-cols-5 gap-2">
-                  {sampleQuestions.map((_, index) => (
-                    <button
-                      key={index}
-                      onClick={() => goToQuestion(index)}
-                      className={`w-8 h-8 rounded text-sm font-medium transition-colors ${
-                        index === currentQuestion
-                          ? 'bg-blue-500 text-white dark:bg-blue-600'
-                          : selectedAnswers[index] !== undefined
-                          ? 'bg-green-100 text-green-800 hover:bg-green-200 dark:bg-green-900/50 dark:text-green-200 dark:hover:bg-green-800/50'
-                          : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:hover:bg-gray-700'
-                      }`}
-                    >
-                      {index + 1}
-                    </button>
-                  ))}
-                </div>
-                <div className="mt-4 space-y-2 text-xs">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-blue-500 dark:bg-blue-600 rounded"></div>
-                    <span className="text-gray-600 dark:text-gray-400">Current</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-green-100 dark:bg-green-900/50 border border-green-300 dark:border-green-700 rounded"></div>
-                    <span className="text-gray-600 dark:text-gray-400">Answered</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <div className="w-3 h-3 bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded"></div>
-                    <span className="text-gray-600 dark:text-gray-400">Not answered</span>
+                    <div>
+                      <p className="text-2xl font-bold text-yellow-600">{statusBreakdown.partial || 0}</p>
+                      <p className="text-xs text-gray-600">Partial Credit</p>
+                    </div>
+                    <div>
+                      <p className="text-2xl font-bold text-red-600">{statusBreakdown.incorrect || 0}</p>
+                      <p className="text-xs text-gray-600">Incorrect</p>
+                    </div>
                   </div>
                 </div>
-              </CardContent>
-              <CardFooter>
-                <Button onClick={finishExam} variant="outline" className="w-full">
-                  Submit Exam
-                </Button>
-              </CardFooter>
-            </Card>
-          </div>
+              )}
+              
+              <div className="space-y-2">
+                <div className="flex justify-between text-sm">
+                  <span>Overall Performance</span>
+                  <span className="font-medium">{results.percentage.toFixed(1)}%</span>
+                </div>
+                <Progress value={results.percentage} className="h-3" />
+              </div>
+            </CardContent>
+            <CardFooter className="flex justify-center gap-4">
+              <Button onClick={() => { setShowReviewMode(true); setCurrentQuestion(0) }} className="bg-purple-600 hover:bg-purple-700">
+                <Award className="mr-2 h-4 w-4" />
+                Review Answers
+              </Button>
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setShowExam(false)
+                  setShowResults(false)
+                  setExamFinished(false)
+                  setShowReviewMode(false)
+                  setAnswers({})
+                  setCurrentQuestion(0)
+                  setExamQuestions([])
+                  setExamId("")
+                }}
+              >
+                Create New Exam
+              </Button>
+            </CardFooter>
+          </Card>
         </div>
       </div>
+    )
+  }
+
+  // Exam Taking Screen
+  if (showExam && examQuestions.length > 0) {
+    const question = examQuestions[currentQuestion]
+    const progress = ((currentQuestion + 1) / examQuestions.length) * 100
+
+    return (
+      <div>
+        <div className="max-w-4xl mx-auto">
+          <Card className="mb-6">
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-4">
+                  <Badge variant="outline">Question {currentQuestion + 1} of {examQuestions.length}</Badge>
+                  <Badge variant="secondary">{question.category}</Badge>
+                  <Badge>{question.difficulty}</Badge>
+                  <Badge variant="outline" className="capitalize">{question.type.replace("-", " ")}</Badge>
+                </div>
+                <div className="flex items-center space-x-2 text-lg font-mono">
+                  <Clock className="w-5 h-5" />
+                  <span>{Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, "0")}</span>
+                </div>
+              </div>
+              <Progress value={progress} />
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>{question.question}</CardTitle>
+              <CardDescription>
+                {question.type === "multiple-select" && "Select all that apply"}
+                {question.type === "written" && "Provide a detailed answer"}
+                {question.type === "multiple-choice" && "Select one answer"}
+                {question.type === "true-false" && "Choose True or False"}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>{renderQuestion(question)}</CardContent>
+            <CardFooter className="flex justify-between">
+              <Button variant="outline" onClick={() => setCurrentQuestion((prev) => Math.max(0, prev - 1))} disabled={currentQuestion === 0}>
+                Previous
+              </Button>
+              <Button onClick={() => {
+                if (currentQuestion === examQuestions.length - 1) {
+                  handleFinishExam()
+                } else {
+                  setCurrentQuestion((prev) => prev + 1)
+                }
+              }}>
+                {currentQuestion === examQuestions.length - 1 ? "Finish Exam" : "Next"}
+              </Button>
+            </CardFooter>
+          </Card>
+        </div>
+      </div>
+    )
+  }
+
+  // Exam Generation Form
+  return (
+    <div>
+      <div className="max-w-4xl mx-auto space-y-6">
+        <Card className="border-white dark:border-gray-950">
+          <CardHeader>
+            <CardTitle className="text-2xl">Generate AI Exam</CardTitle>
+            <CardDescription>Create a comprehensive exam from your study materials</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Select Projects</label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between bg-transparent">
+                    {selectedProjects.length === 0 ? "Select projects..." : `${selectedProjects.length} project(s) selected`}
+                    <ChevronDown className="ml-2 h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2 pb-2 border-b">
+                      <Checkbox
+                        checked={selectedProjects.length === projects.length}
+                        onCheckedChange={(checked) => {
+                          setSelectedProjects(checked ? projects.map((p) => p.id) : [])
+                          setSelectedDocuments([])
+                        }}
+                      />
+                      <span className="font-medium">Select All</span>
+                    </div>
+                    {projects.map((project) => (
+                      <div key={project.id} className="flex items-center space-x-2">
+                        <Checkbox
+                          checked={selectedProjects.includes(project.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedProjects([...selectedProjects, project.id])
+                            } else {
+                              setSelectedProjects(selectedProjects.filter((id) => id !== project.id))
+                              setSelectedDocuments(selectedDocuments.filter((docId) => !project.documents.some((doc) => doc.id === docId)))
+                            }
+                          }}
+                        />
+                        <span>{project.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Select Documents</label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-between bg-transparent" disabled={selectedProjects.length === 0}>
+                    {selectedDocuments.length === 0 ? "Select documents..." : `${selectedDocuments.length} document(s) selected`}
+                    <ChevronDown className="ml-2 h-4 w-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-full p-4">
+                  <div className="space-y-2">
+                    <div className="flex items-center space-x-2 pb-2 border-b">
+                      <Checkbox
+                        checked={selectedDocuments.length === availableDocuments.length}
+                        onCheckedChange={(checked) => setSelectedDocuments(checked ? availableDocuments.map((d) => d.id) : [])}
+                      />
+                      <span className="font-medium">Select All</span>
+                    </div>
+                    {availableDocuments.map((doc) => (
+                      <div key={doc.id} className="flex items-center space-x-2">
+                        <Checkbox
+                          checked={selectedDocuments.includes(doc.id)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedDocuments([...selectedDocuments, doc.id])
+                            } else {
+                              setSelectedDocuments(selectedDocuments.filter((id) => id !== doc.id))
+                            }
+                          }}
+                        />
+                        <span>{doc.name}</span>
+                      </div>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Number of Questions</label>
+                <Input type="number" min="5" max="50" value={questionCount} onChange={(e) => setQuestionCount(e.target.value)} />
+              </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium">Duration (minutes)</label>
+                <Input type="number" min="15" max="180" value={duration} onChange={(e) => setDuration(e.target.value)} />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium flex items-center gap-2">
+                Question Types
+                {selectedQuestionTypes.length > 0 && (
+                  <Badge variant="secondary" className="text-xs">{selectedQuestionTypes.length} selected</Badge>
+                )}
+              </label>
+              <div className="grid grid-cols-2 gap-3">
+                {questionTypes.map((type) => (
+                  <div 
+                    key={type.value} 
+                    className={`flex items-center space-x-2 p-3 border rounded-lg transition-colors ${
+                      selectedQuestionTypes.includes(type.value)
+                        ? "border-purple-500 bg-purple-50 dark:bg-purple-950/30"
+                        : "border-gray-200 dark:border-gray-700"
+                    }`}
+                  >
+                    <Checkbox
+                      checked={selectedQuestionTypes.includes(type.value)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedQuestionTypes([...selectedQuestionTypes, type.value])
+                        } else {
+                          setSelectedQuestionTypes(selectedQuestionTypes.filter((t) => t !== type.value))
+                        }
+                      }}
+                    />
+                    <span className="text-sm font-medium">{type.label}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Difficulty Levels</label>
+              <div className="flex gap-3">
+                {difficulties.map((diff) => (
+                  <div 
+                    key={diff} 
+                    className={`flex items-center space-x-2 p-3 border rounded-lg flex-1 transition-colors ${
+                      selectedDifficulties.includes(diff)
+                        ? "border-purple-500 bg-purple-50 dark:bg-purple-950/30"
+                        : "border-gray-200 dark:border-gray-700"
+                    }`}
+                  >
+                    <Checkbox
+                      checked={selectedDifficulties.includes(diff)}
+                      onCheckedChange={(checked) => {
+                        if (checked) {
+                          setSelectedDifficulties([...selectedDifficulties, diff])
+                        } else {
+                          setSelectedDifficulties(selectedDifficulties.filter((d) => d !== diff))
+                        }
+                      }}
+                    />
+                    <span className="text-sm font-medium capitalize">{diff}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter>
+            <Button onClick={generateExam} disabled={isGenerating} className="w-full" size="lg">
+              {isGenerating ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  Generating Exam...
+                </>
+              ) : (
+                <>
+                  <BookOpen className="mr-2 h-4 w-4" />
+                  Generate Exam
+                </>
+              )}
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
     </div>
-  );
+  )
 }
+  

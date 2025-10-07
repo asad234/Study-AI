@@ -3,6 +3,7 @@ import { afterExamQuestionChange, afterExamQuestionDelete } from './hooks/revali
 
 export const ExamQuestions: CollectionConfig = {
   slug: 'exam_questions',
+  timestamps: false,  // ✅ Add this line
   admin: {
     defaultColumns: ['exam', 'question', 'marks'],
     useAsTitle: 'question',
@@ -30,4 +31,4 @@ export const ExamQuestions: CollectionConfig = {
     afterChange: [afterExamQuestionChange],
     afterDelete: [afterExamQuestionDelete],
   },
-};
+}
