@@ -250,11 +250,9 @@ export default function QuizProjectsPage() {
 
   return (
       <div className="container mx-auto py-8 px-4">
-        <UnderDevelopmentBanner />
-
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900  dark:text-white">Start Quiz Session</h1>
+            {/*<h1 className="text-3xl font-bold text-gray-900  dark:text-white">Start Quiz Session</h1>*/}
           </div>
           <div className="flex gap-3">
             <PreviewQuizzes className="bg-purple-700 text-white" />

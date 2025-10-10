@@ -22,7 +22,9 @@ interface Project {
 
 interface Document {
   id: string
-  name: string
+  name?: string
+  title?: string
+  file_name?: string
 }
 
 // ===== PARTIAL SCORING HELPER FUNCTIONS =====
@@ -246,6 +248,7 @@ export default function ExamSimulatorPage() {
         )
         const results = await Promise.all(documentPromises)
         const allDocs = results.flatMap((result) => result.documents || [])
+        console.log('📄 Fetched documents:', allDocs) // Debug log
         setAvailableDocuments(allDocs)
       } catch (error) {
         console.error("Failed to fetch documents:", error)
@@ -1024,184 +1027,250 @@ export default function ExamSimulatorPage() {
 
   // Exam Generation Form
   return (
-    <div>
-      <div className="max-w-4xl mx-auto space-y-6">
-        <Card className="border-white dark:border-gray-950">
-          <CardHeader>
-            <CardTitle className="text-2xl">Generate AI Exam</CardTitle>
-            <CardDescription>Create a comprehensive exam from your study materials</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Select Projects</label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full justify-between bg-transparent">
-                    {selectedProjects.length === 0 ? "Select projects..." : `${selectedProjects.length} project(s) selected`}
-                    <ChevronDown className="ml-2 h-4 w-4" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-full p-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2 pb-2 border-b">
+    <div className="container mx-auto py-8 px-4">
+      <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
+        <div>
+          {/*<h1 className="text-3xl font-bold text-gray-900 dark:text-white">Exam Setup</h1>*/}
+        </div>
+      </div>
+
+      <Card className="max-w-3xl mx-auto border-2 border-white dark:border-gray-950">
+        <CardHeader className="text-center pb-6 space-y-2">
+          <CardTitle className="text-2xl font-bold">Generate Exam with AI</CardTitle>
+          <CardDescription className="text-base">Set up your exam preferences</CardDescription>
+        </CardHeader>
+
+        <CardContent className="space-y-6">
+          {/* Select Projects */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Select Projects</label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-between h-12 border-2 hover:border-purple-300 bg-white dark:bg-gray-950"
+                >
+                  <span className="text-gray-700 dark:text-gray-300">
+                    {selectedProjects.length === 0
+                      ? "Select projects"
+                      : selectedProjects.length === projects.length
+                      ? "All projects selected"
+                      : `${selectedProjects.length} project${selectedProjects.length > 1 ? "s" : ""} selected`}
+                  </span>
+                  <ChevronDown className="w-4 h-4 text-gray-500" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                <div className="max-h-64 overflow-y-auto p-4 space-y-3">
+                  <div className="flex items-center space-x-3 p-2 bg-purple-50 rounded-lg dark:bg-gray-900">
+                    <Checkbox
+                      checked={selectedProjects.length === projects.length}
+                      onCheckedChange={(checked) => {
+                        setSelectedProjects(checked ? projects.map((p) => p.id) : [])
+                        setSelectedDocuments([])
+                      }}
+                    />
+                    <span className="font-semibold text-purple-700 dark:text-purple-400 cursor-pointer">
+                      Select All
+                    </span>
+                  </div>
+                  {projects.map((project) => (
+                    <div key={project.id} className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-lg dark:hover:bg-gray-800">
                       <Checkbox
-                        checked={selectedProjects.length === projects.length}
+                        checked={selectedProjects.includes(project.id)}
                         onCheckedChange={(checked) => {
-                          setSelectedProjects(checked ? projects.map((p) => p.id) : [])
-                          setSelectedDocuments([])
+                          if (checked) {
+                            setSelectedProjects([...selectedProjects, project.id])
+                          } else {
+                            setSelectedProjects(selectedProjects.filter((id) => id !== project.id))
+                            setSelectedDocuments(selectedDocuments.filter((docId) => !project.documents.some((doc) => doc.id === docId)))
+                          }
                         }}
                       />
-                      <span className="font-medium">Select All</span>
+                      <span className="cursor-pointer flex-1">{project.name}</span>
                     </div>
-                    {projects.map((project) => (
-                      <div key={project.id} className="flex items-center space-x-2">
-                        <Checkbox
-                          checked={selectedProjects.includes(project.id)}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              setSelectedProjects([...selectedProjects, project.id])
-                            } else {
-                              setSelectedProjects(selectedProjects.filter((id) => id !== project.id))
-                              setSelectedDocuments(selectedDocuments.filter((docId) => !project.documents.some((doc) => doc.id === docId)))
-                            }
-                          }}
-                        />
-                        <span>{project.name}</span>
-                      </div>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
+                  ))}
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
 
-            <div className="space-y-2">
-              <label className="text-sm font-medium">Select Documents</label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className="w-full justify-between bg-transparent" disabled={selectedProjects.length === 0}>
-                    {selectedDocuments.length === 0 ? "Select documents..." : `${selectedDocuments.length} document(s) selected`}
-                    <ChevronDown className="ml-2 h-4 w-4" />
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-full p-4">
-                  <div className="space-y-2">
-                    <div className="flex items-center space-x-2 pb-2 border-b">
-                      <Checkbox
-                        checked={selectedDocuments.length === availableDocuments.length}
-                        onCheckedChange={(checked) => setSelectedDocuments(checked ? availableDocuments.map((d) => d.id) : [])}
-                      />
-                      <span className="font-medium">Select All</span>
+          {/* Select Documents */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Select Documents</label>
+            <Popover>
+              <PopoverTrigger asChild>
+                <Button 
+                  variant="outline" 
+                  className="w-full justify-between h-12 border-2 hover:border-purple-300 bg-white dark:bg-gray-950" 
+                  disabled={selectedProjects.length === 0}
+                >
+                  <span className="text-gray-700 dark:text-gray-300">
+                    {selectedDocuments.length === 0
+                      ? availableDocuments.length === 0
+                        ? "No documents available"
+                        : "Select documents"
+                      : selectedDocuments.length === availableDocuments.length
+                      ? "All documents selected"
+                      : `${selectedDocuments.length} document${selectedDocuments.length > 1 ? "s" : ""} selected`}
+                  </span>
+                  <ChevronDown className="w-4 h-4 text-gray-500" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                <div className="max-h-64 overflow-y-auto p-4 space-y-3">
+                  {availableDocuments.length > 0 ? (
+                    <>
+                      <div className="flex items-center space-x-3 p-2 bg-purple-50 rounded-lg dark:bg-gray-900">
+                        <Checkbox
+                          checked={selectedDocuments.length === availableDocuments.length}
+                          onCheckedChange={(checked) => setSelectedDocuments(checked ? availableDocuments.map((d) => d.id) : [])}
+                        />
+                        <span className="font-semibold text-purple-700 dark:text-purple-400 cursor-pointer">
+                          Select All
+                        </span>
+                      </div>
+                      {availableDocuments.map((doc) => (
+                        <div key={doc.id} className="flex items-center space-x-3 p-2 hover:bg-gray-50 rounded-lg dark:hover:bg-gray-800">
+                          <Checkbox
+                            checked={selectedDocuments.includes(doc.id)}
+                            onCheckedChange={(checked) => {
+                              if (checked) {
+                                setSelectedDocuments([...selectedDocuments, doc.id])
+                              } else {
+                                setSelectedDocuments(selectedDocuments.filter((id) => id !== doc.id))
+                              }
+                            }}
+                          />
+                          <span className="cursor-pointer flex-1">{doc.title || doc.name || doc.file_name || 'Untitled Document'}</span>
+                        </div>
+                      ))}
+                    </>
+                  ) : (
+                    <div className="text-center p-4 text-gray-500">
+                      {selectedProjects.length === 0 ? "Select projects first" : "No documents in selected projects"}
                     </div>
-                    {availableDocuments.map((doc) => (
-                      <div key={doc.id} className="flex items-center space-x-2">
-                        <Checkbox
-                          checked={selectedDocuments.includes(doc.id)}
-                          onCheckedChange={(checked) => {
-                            if (checked) {
-                              setSelectedDocuments([...selectedDocuments, doc.id])
-                            } else {
-                              setSelectedDocuments(selectedDocuments.filter((id) => id !== doc.id))
-                            }
-                          }}
-                        />
-                        <span>{doc.name}</span>
-                      </div>
-                    ))}
-                  </div>
-                </PopoverContent>
-              </Popover>
-            </div>
+                  )}
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
 
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Number of Questions</label>
-                <Input type="number" min="5" max="50" value={questionCount} onChange={(e) => setQuestionCount(e.target.value)} />
-              </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Duration (minutes)</label>
-                <Input type="number" min="15" max="180" value={duration} onChange={(e) => setDuration(e.target.value)} />
-              </div>
-            </div>
-
+          {/* Question Settings Grid */}
+          <div className="grid grid-cols-2 gap-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium flex items-center gap-2">
-                Question Types
-                {selectedQuestionTypes.length > 0 && (
-                  <Badge variant="secondary" className="text-xs">{selectedQuestionTypes.length} selected</Badge>
-                )}
-              </label>
-              <div className="grid grid-cols-2 gap-3">
-                {questionTypes.map((type) => (
-                  <div 
-                    key={type.value} 
-                    className={`flex items-center space-x-2 p-3 border rounded-lg transition-colors ${
-                      selectedQuestionTypes.includes(type.value)
-                        ? "border-purple-500 bg-purple-50 dark:bg-purple-950/30"
-                        : "border-gray-200 dark:border-gray-700"
-                    }`}
-                  >
-                    <Checkbox
-                      checked={selectedQuestionTypes.includes(type.value)}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setSelectedQuestionTypes([...selectedQuestionTypes, type.value])
-                        } else {
-                          setSelectedQuestionTypes(selectedQuestionTypes.filter((t) => t !== type.value))
-                        }
-                      }}
-                    />
-                    <span className="text-sm font-medium">{type.label}</span>
-                  </div>
-                ))}
-              </div>
+              <label className="text-sm font-medium">Number of Questions</label>
+              <Input 
+                type="number" 
+                min="5" 
+                max="50" 
+                value={questionCount} 
+                onChange={(e) => setQuestionCount(e.target.value)}
+                className="h-12 border-2 hover:border-purple-300 bg-white dark:bg-gray-950"
+              />
             </div>
-
             <div className="space-y-2">
-              <label className="text-sm font-medium">Difficulty Levels</label>
-              <div className="flex gap-3">
-                {difficulties.map((diff) => (
-                  <div 
-                    key={diff} 
-                    className={`flex items-center space-x-2 p-3 border rounded-lg flex-1 transition-colors ${
-                      selectedDifficulties.includes(diff)
-                        ? "border-purple-500 bg-purple-50 dark:bg-purple-950/30"
-                        : "border-gray-200 dark:border-gray-700"
-                    }`}
-                  >
-                    <Checkbox
-                      checked={selectedDifficulties.includes(diff)}
-                      onCheckedChange={(checked) => {
-                        if (checked) {
-                          setSelectedDifficulties([...selectedDifficulties, diff])
-                        } else {
-                          setSelectedDifficulties(selectedDifficulties.filter((d) => d !== diff))
-                        }
-                      }}
-                    />
-                    <span className="text-sm font-medium capitalize">{diff}</span>
-                  </div>
-                ))}
-              </div>
+              <label className="text-sm font-medium">Duration (minutes)</label>
+              <Input 
+                type="number" 
+                min="15" 
+                max="180" 
+                value={duration} 
+                onChange={(e) => setDuration(e.target.value)}
+                className="h-12 border-2 hover:border-purple-300 bg-white dark:bg-gray-950"
+              />
             </div>
-          </CardContent>
-          <CardFooter>
-            <Button onClick={generateExam} disabled={isGenerating} className="w-full" size="lg">
+          </div>
+
+          {/* Question Types */}
+          <div className="space-y-2">
+            <label className="text-sm font-medium flex items-center gap-2">
+              Question Types
+              {selectedQuestionTypes.length > 0 && (
+                <Badge variant="secondary" className="text-xs">{selectedQuestionTypes.length} selected</Badge>
+              )}
+            </label>
+            <div className="space-y-3 p-4 border-2 rounded-lg bg-purple-50/50 dark:bg-gray-950">
+              {questionTypes.map((type) => (
+                <div key={type.value} className="flex items-center space-x-3">
+                  <Checkbox
+                    checked={selectedQuestionTypes.includes(type.value)}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        setSelectedQuestionTypes([...selectedQuestionTypes, type.value])
+                      } else {
+                        setSelectedQuestionTypes(selectedQuestionTypes.filter((t) => t !== type.value))
+                      }
+                    }}
+                  />
+                  <span className="cursor-pointer">{type.label}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Difficulty Levels */}
+          <div className="space-y-3">
+            <label className="text-sm font-medium">Difficulty Level</label>
+            <div className="space-y-3 p-4 border-2 rounded-lg bg-purple-50/50 dark:bg-gray-950">
+              <div className="flex items-center space-x-3">
+                <Checkbox
+                  checked={selectedDifficulties.length === 3}
+                  onCheckedChange={(checked) => {
+                    setSelectedDifficulties(checked ? ["easy", "medium", "hard"] : [])
+                  }}
+                />
+                <span className="font-semibold cursor-pointer">
+                  Mix (All difficulties)
+                </span>
+              </div>
+              {difficulties.map((diff) => (
+                <div key={diff} className="flex items-center space-x-3">
+                  <Checkbox
+                    checked={selectedDifficulties.includes(diff)}
+                    onCheckedChange={(checked) => {
+                      if (checked) {
+                        setSelectedDifficulties([...selectedDifficulties, diff])
+                      } else {
+                        setSelectedDifficulties(selectedDifficulties.filter((d) => d !== diff))
+                      }
+                    }}
+                  />
+                  <span className="cursor-pointer capitalize">{diff}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Generate Button */}
+          <div className="pt-4 space-y-4">
+            <p className="text-center text-sm text-gray-600 dark:text-gray-400">
+              Your exam will contain{" "}
+              <span className="font-bold text-purple-600">{questionCount} questions</span>
+              {" "}and last{" "}
+              <span className="font-bold text-purple-600">{duration} minutes</span>
+            </p>
+
+            <Button
+              onClick={generateExam}
+              disabled={isGenerating}
+              className="w-full h-14 text-lg font-semibold bg-black hover:bg-gray-800 text-white dark:bg-white dark:text-black"
+            >
               {isGenerating ? (
                 <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <Loader2 className="mr-2 h-5 w-5 animate-spin" />
                   Generating Exam...
                 </>
               ) : (
                 <>
-                  <BookOpen className="mr-2 h-4 w-4" />
-                  Generate Exam
+                  <BookOpen className="mr-2 h-5 w-5" />
+                  Start Exam
                 </>
               )}
             </Button>
-          </CardFooter>
-        </Card>
-      </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }
-  

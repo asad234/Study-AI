@@ -34,6 +34,70 @@ const ExamResponseSchema = z.object({
   ),
 })
 
+// Helper function to detect document language
+async function detectLanguage(text: string): Promise<'sv' | 'en'> {
+  try {
+    // Take a sample of the text (first 1000 characters should be enough)
+    const sample = text.slice(0, 1000)
+    
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini", // Using mini model for cost efficiency
+      messages: [
+        {
+          role: "system",
+          content: "You are a language detector. Analyze the text and respond with ONLY 'sv' for Swedish or 'en' for English or other languages. If the language is not Swedish, always respond with 'en'."
+        },
+        {
+          role: "user",
+          content: `Detect the language of this text:\n\n${sample}`
+        }
+      ],
+      temperature: 0,
+      max_tokens: 10,
+    })
+
+    const detectedLang = response.choices[0]?.message.content?.trim().toLowerCase()
+    
+    // Return 'sv' only if Swedish is detected, otherwise default to 'en'
+    return detectedLang === 'sv' ? 'sv' : 'en'
+  } catch (error) {
+    console.error("Language detection error:", error)
+    // Default to English if detection fails
+    return 'en'
+  }
+}
+
+// Helper function to get language-specific instructions for exams
+function getLanguageInstructions(language: 'sv' | 'en'): string {
+  if (language === 'sv') {
+    return `VIKTIGT: Skapa ALLA tentamensfrågor på SVENSKA.
+- Alla frågor ska vara på svenska
+- Alla svarsalternativ ska vara på svenska
+- Alla förklaringar ska vara på svenska
+- Alla kategorier och etiketter ska vara på svenska
+- Använd korrekt svensk grammatik och stavning
+
+FRÅGETYPER PÅ SVENSKA:
+- "multiple-choice" = Flervalsfrågor med ett rätt svar
+- "true-false" = Sant eller Falskt frågor
+- "written" = Skriftliga svar/essäfrågor
+- "multiple-select" = Flervalsfrågor med flera rätta svar`
+  }
+  
+  return `IMPORTANT: Create ALL exam questions in ENGLISH.
+- All questions must be in English
+- All answer options must be in English
+- All explanations must be in English
+- All categories and labels must be in English
+- Use proper English grammar and spelling
+
+QUESTION TYPES IN ENGLISH:
+- "multiple-choice" = Multiple choice questions with one correct answer
+- "true-false" = True or False questions
+- "written" = Written answer/essay questions
+- "multiple-select" = Multiple choice questions with multiple correct answers`
+}
+
 export async function POST(request: NextRequest) {
   const requestId = Date.now()
   console.time(`exam-generation-${requestId}`)
@@ -130,15 +194,34 @@ export async function POST(request: NextRequest) {
           continue
         }
 
-        // Build document content
-        const documentContent = `Document Title: ${document.title || document.file_name || "Untitled"}
-File Type: ${document.file_type || "Unknown"}
+        const documentContent = document.notes || ""
+
+        if (!documentContent || documentContent.length < 50) {
+          console.error(`Document ${documentId} has no extracted content`)
+          failedDocuments.push(documentId)
+          continue
+        }
+
+        console.log(`Document "${document.title || document.file_name}" content length: ${documentContent.length} characters`)
+
+        // 🆕 DETECT LANGUAGE
+        const detectedLanguage = await detectLanguage(documentContent)
+        console.log(`Detected language for document ${documentId}: ${detectedLanguage}`)
+
+        // 🆕 GET LANGUAGE-SPECIFIC INSTRUCTIONS
+        const languageInstructions = getLanguageInstructions(detectedLanguage)
+        const languageName = detectedLanguage === 'sv' ? 'Swedish' : 'English'
+
+        const documentContext = `Document Title: ${document.title || document.file_name || "Untitled"}
 Subject Area: ${document.subject || "General"}
-File Size: ${document.file_size ? `${Math.round(document.file_size / 1024)} KB` : "Unknown"}
+Document Language: ${languageName}
 
-This document contains educational material that needs to be analyzed and converted into effective exam questions.`
+DOCUMENT CONTENT:
+${documentContent}
 
-        console.log(`Generating exam questions for document: ${document.title || document.file_name}`)
+This is the actual content extracted from the student's study material. Use this content to generate relevant exam questions.`
+
+        console.log(`Generating exam questions in ${languageName} for document: ${document.title || document.file_name}`)
 
         // Build detailed question type instructions
         const questionTypeInstructions = buildQuestionTypeInstructions(
@@ -148,11 +231,13 @@ This document contains educational material that needs to be analyzed and conver
 
         // Generate questions using OpenAI with EXPLICIT type enforcement
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o-mini-2024-07-18",
+          model: "gpt-4o",
           messages: [
             {
               role: "system",
               content: `You are an expert exam creator. You MUST generate questions in MULTIPLE FORMATS as specified.
+
+${languageInstructions}
 
 ⚠️ CRITICAL REQUIREMENT: Generate questions in THE EXACT TYPES AND QUANTITIES specified below. This is NOT optional.
 
@@ -176,8 +261,8 @@ TOTAL QUESTIONS REQUIRED: ${questionsPerDoc}
 {
   "type": "true-false",
   "question": "Statement to evaluate?",
-  "options": ["True", "False"],
-  "correctAnswer": 0,  // 0 for False, 1 for True
+  "options": ${detectedLanguage === 'sv' ? '["Sant", "Falskt"]' : '["True", "False"]'},
+  "correctAnswer": 0,  // 0 for False/Falskt, 1 for True/Sant
   "explanation": "Why this is true/false..."
 }
 
@@ -204,37 +289,30 @@ DIFFICULTY & MARKS:
 - Medium (50%): 4-5 marks - Application and analysis
 - Hard (20%): 6-8 marks - Synthesis and evaluation
 
+CONTENT REQUIREMENTS:
+- Base ALL questions on the actual document content provided
+- Do NOT add general knowledge questions
+- Questions should test understanding of the document material
+- Ensure accuracy to the source material
+- ALL content must be in ${languageName}
+
 VALIDATION CHECKLIST:
 ✓ Did you generate the EXACT number of each question type?
 ✓ Are "type" values exactly: "multiple-choice", "true-false", "written", or "multiple-select"?
 ✓ Do multiple-choice have 4 options and correctAnswer as number?
-✓ Do true-false have 2 options and correctAnswer as 0 or 1?
+✓ Do true-false have 2 options ${detectedLanguage === 'sv' ? '(Sant/Falskt)' : '(True/False)'} and correctAnswer as 0 or 1?
 ✓ Do written questions have options: null and correctAnswer as string?
-✓ Do multiple-select have correctAnswer as array with 2+ numbers?`,
+✓ Do multiple-select have correctAnswer as array with 2+ numbers?
+✓ Are all questions based on the document content?
+✓ Is everything in ${languageName}?`,
             },
             {
               role: "user",
-              content: `📄 Document Information:
-${documentContent}
-
-🎯 YOUR TASK:
-Generate EXACTLY ${questionsPerDoc} questions following this MANDATORY distribution:
-
-${typeDistribution.map(dist => `▶ ${dist.count} ${dist.type.toUpperCase().replace('-', ' ')} question${dist.count > 1 ? 's' : ''}`).join('\n')}
-
-Difficulty mix: ${validatedData.difficulties.join(", ")}
-
-⚠️ IMPORTANT: 
-- You MUST create the exact mix of question types specified above
-- Do NOT generate only multiple-choice questions
-- Each question type has a different format - follow it precisely
-- Ensure variety in topics and cognitive levels
-
-Start generating now, following the exact distribution!`,
+              content: documentContext,
             },
           ],
           response_format: zodResponseFormat(ExamResponseSchema, "exam"),
-          temperature: 0.5,
+          temperature: 0.3,
           max_tokens: 5000,
         })
 
@@ -270,6 +348,7 @@ Start generating now, following the exact distribution!`,
         
         console.log(`📊 GENERATED TYPES for document ${documentId}:`, generatedTypes)
         console.log(`📋 EXPECTED TYPES:`, typeDistribution)
+        console.log(`🌐 Language used: ${languageName}`)
         
         // Warn if distribution doesn't match
         const mismatched = typeDistribution.some(dist => generatedTypes[dist.type] !== dist.count)
@@ -284,7 +363,7 @@ Start generating now, following the exact distribution!`,
         processedDocuments.push(documentId)
 
         console.log(
-          `Successfully generated ${parsed.data.questions.length} questions for document ${documentId}`,
+          `Successfully generated ${parsed.data.questions.length} questions in ${languageName} for document ${documentId}`,
         )
       } catch (docError) {
         console.error(`Error processing document ${documentId}:`, docError)
@@ -299,7 +378,7 @@ Start generating now, following the exact distribution!`,
       return NextResponse.json(
         {
           error: "Failed to generate exam questions from any documents",
-          solution: "Please ensure your documents contain readable educational content",
+          solution: "Please ensure your documents contain extracted text content. Upload PDF or Word documents and wait for text extraction to complete.",
           processedDocuments,
           failedDocuments,
         },
@@ -471,8 +550,8 @@ MULTIPLE CHOICE (${count} questions):
       case "true-false":
         instructions.push(`
 TRUE/FALSE (${count} questions):
-- Provide EXACTLY 2 options: ["True", "False"]
-- Set "correctAnswer" as 0 for False or 1 for True
+- Provide EXACTLY 2 options: ["True", "False"] or ["Sant", "Falskt"]
+- Set "correctAnswer" as 0 for False/Falskt or 1 for True/Sant
 - Example: {"type": "true-false", "options": ["True", "False"], "correctAnswer": 1}`)
         break
       

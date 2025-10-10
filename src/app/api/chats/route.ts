@@ -59,9 +59,40 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "No valid documents found" }, { status: 404 })
     }
 
+    // DEBUG: Log document structure to understand what fields are available
+    console.log("=== DOCUMENT DEBUG INFO ===")
+    documents.docs.forEach((doc, index) => {
+      console.log(`Document ${index + 1}:`, {
+        id: doc.id,
+        title: doc.title,
+        status: doc.status,
+        notesLength: doc.notes?.length || 0,
+        notesPreview: doc.notes?.substring(0, 200) || "NO NOTES FIELD",
+        availableFields: Object.keys(doc),
+      })
+    })
+
+    // Try different possible content fields
     const documentContext = documents.docs
-      .map((doc) => `[Document: ${doc.title}]\n${doc.notes || "No content available"}\n`)
+      .map((doc) => {
+        // Try multiple possible content fields
+        const content = 
+          doc.notes || 
+          doc.content || 
+          doc.extracted_text || 
+          doc.text || 
+          "No content available"
+        
+        console.log(`Document "${doc.title}" content length:`, content.length)
+        return `[Document: ${doc.title}]\n${content}\n`
+      })
       .join("\n")
+
+    // DEBUG: Log the full context being sent to OpenAI
+    console.log("=== CONTEXT BEING SENT TO OPENAI ===")
+    console.log("Total context length:", documentContext.length)
+    console.log("Context preview (first 500 chars):", documentContext.substring(0, 500))
+    console.log("Context preview (last 500 chars):", documentContext.substring(documentContext.length - 500))
 
     const documentTitles = documents.docs.map((doc) => doc.title)
 
@@ -97,63 +128,74 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    const systemPrompt = `You are "StudyBuddy," an AI study assistant and tutor. Your primary role is to help students understand their uploaded study materials by providing exceptionally clear, detailed, and well-structured explanations.
+    const systemPrompt = `You are StudyBuddy, an AI tutor that helps students learn from their study materials. Answer questions clearly based on the uploaded documents.
 
-**CRITICAL RESPONSE FORMATTING RULES - YOU MUST FOLLOW THESE:**
-1. **ABSOLUTELY NO MARKDOWN:** Do not use any markdown formatting like **, *, #, -, >, or .
-2. **Use Plain Text Formatting:** Structure your answer using clear section headers in ALL CAPS, line breaks, and simple dividers like hyphens (---).
-3. **Answer in "Cards":** Structure your response as a series of distinct information blocks, similar to digital flashcards. Each "card" should cover a single key point or section.
+RESPONSE STRUCTURE - FOLLOW EXACTLY:
 
-**HOW TO STRUCTURE YOUR RESPONSE:**
+Start with a brief, friendly introduction (1-2 sentences).
 
-[CONCEPT INTRODUCTION]
-Start with a brief, friendly introduction to the overall concept or topic. Greet the user and state what you will be explaining.
+Then break down your answer into clear elements:
 
----
+ELEMENT 1: [First key point or concept]
+Explanation: [Clear explanation in 2-3 sentences]
 
-[KEY ELEMENTS]
-This is the main body of your answer. Break the topic down into its core components.
-For each key element, present it like this:
+ELEMENT 2: [Second key point or concept]
+Explanation: [Clear explanation in 2-3 sentences]
 
-ELEMENT 1: [NAME OF THE FIRST KEY ELEMENT]
-Explanation: [A clear, concise explanation of this element. Use full sentences. Why is it important? How does it work?]
+ELEMENT 3: [Third key point or concept]
+Explanation: [Clear explanation in 2-3 sentences]
 
-ELEMENT 2: [NAME OF THE SECOND KEY ELEMENT]
-Explanation: [A clear, concise explanation...]
+(Add more elements as needed - use as many as required to fully answer the question)
 
-(Continue for all key elements)
+SUMMARY:
+[Provide a brief summary that ties everything together in 2-3 sentences]
 
----
+End with:
+(Source: [Document Name])
 
-[SUMMARY]
-Provide a concise summary that ties all the key elements back together. Start this section with "SUMMARY:".
+or for Swedish documents:
+(Källa: [Document Name])
 
----
+IMPORTANT RULES:
+1. Always search the document first for the answer
+2. For multiple choice questions, show all options and state which is correct
+3. Break down complex topics into clear elements
+4. Each element should focus on ONE key point
+5. Keep explanations clear and educational
+6. Use simple language that students can understand
 
-[RELATED CONTEXT]
-**IMPORTANT:** You MUST mention which specific documents you used to answer this question. List the document names from the available documents below.
-Start with "CONTEXT: This information is based on your documents: [Document Name 1], [Document Name 2], etc."
-If the information is general knowledge not from the documents, state: "CONTEXT: This is general knowledge, not specific to your uploaded documents."
-
-Always maintain a conversational, educational, and encouraging tone. Ask rhetorical questions to engage the student.
-
-Available documents for context:
+DOCUMENT CONTENT:
 ${documentContext}
 
-Student question: ${message}`
+STUDENT QUESTION: ${message}
+
+REMEMBER:
+- Use ELEMENT 1, ELEMENT 2, ELEMENT 3 format
+- Each element = one key concept with explanation
+- End with SUMMARY and source
+- Base everything on the document content`
+
+    // DEBUG: Log the system prompt length
+    console.log("=== SYSTEM PROMPT INFO ===")
+    console.log("System prompt length:", systemPrompt.length)
 
     // Generate AI response using OpenAI
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+      model: "gpt-4o", // Best model for instruction following and tutoring
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: message },
       ],
-      temperature: 0.7,
-      max_tokens: 1500,
+      temperature: 0.3, // Lower = more consistent
+      max_tokens: 2000, // Increased for better explanations
     })
 
     const aiResponse = completion.choices[0]?.message?.content || "I apologize, but I couldn't generate a response."
+
+    // DEBUG: Log token usage
+    console.log("=== OPENAI RESPONSE INFO ===")
+    console.log("Tokens used:", completion.usage)
+    console.log("Response length:", aiResponse.length)
 
     // Save AI response
     const aiMessage = await payload.create({
@@ -187,4 +229,3 @@ Student question: ${message}`
     return NextResponse.json({ error: "Failed to process chat message" }, { status: 500 })
   }
 }
-      

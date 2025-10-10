@@ -30,7 +30,6 @@ import ManualFlashCardCreator from "./Manual/ManualFlashCardCreator"
 import PreviewCards from "./Previews/PreviewCards"
 import UnderDevelopmentBanner from "@/components/common/underDevelopment"
 
-
 interface Project {
   id: string
   name: string
@@ -69,7 +68,7 @@ export default function ProjectsPage() {
   const [deletingProjects, setDeletingProjects] = useState<Set<string>>(new Set())
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
   const [deleteConfirmationText, setDeleteConfirmationText] = useState("")
-  const [generatingFlashcards, setGeneratingFlashcards] = useState(false)
+  const [generatingFlashcards, setGeneratingFlashcards] = useState<Set<string>>(new Set())
 
   const [generatedFlashcards, setGeneratedFlashcards] = useState<any[]>([])
   const [showFlashcardsStudy, setShowFlashcardsStudy] = useState(false)
@@ -140,7 +139,9 @@ export default function ProjectsPage() {
       return
     }
 
-    setGeneratingFlashcards(true)
+    // Use a unique identifier for this generation operation
+    const generationId = "bulk-generation"
+    setGeneratingFlashcards(prev => new Set(prev).add(generationId))
 
     try {
       console.log("Starting flashcard generation for documents:", selectedDocumentIds)
@@ -186,7 +187,11 @@ export default function ProjectsPage() {
         variant: "destructive",
       })
     } finally {
-      setGeneratingFlashcards(false)
+      setGeneratingFlashcards(prev => {
+        const newSet = new Set(prev)
+        newSet.delete(generationId)
+        return newSet
+      })
     }
   }
 
@@ -574,7 +579,7 @@ export default function ProjectsPage() {
       return
     }
 
-    setGeneratingFlashcards((prev) => new Set(prev).add(project.id))
+    setGeneratingFlashcards(prev => new Set(prev).add(project.id))
 
     try {
       console.log("Starting flashcard generation for project:", project.name)
@@ -623,7 +628,7 @@ export default function ProjectsPage() {
         variant: "destructive",
       })
     } finally {
-      setGeneratingFlashcards((prev) => {
+      setGeneratingFlashcards(prev => {
         const newSet = new Set(prev)
         newSet.delete(project.id)
         return newSet
@@ -701,10 +706,9 @@ export default function ProjectsPage() {
   return (
     <div>
       <div className="container mx-auto py-8">
-        <UnderDevelopmentBanner />
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mb-8">
           <div>
-            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Your Flashcard Projects</h1>
+            <h1 className="text-3xl font-bold text-gray-900 dark:text-white">Your Flashcards</h1>
             <p className="text-gray-600 dark:text-gray-300">
               View and manage all of your study flashcard projects in one place.
             </p>
@@ -721,8 +725,7 @@ export default function ProjectsPage() {
           <CardHeader className="text-center">
             <CardTitle className="text-2xl font-bold">Start a Flashcard Session</CardTitle>
             <CardDescription className="text-base">
-              Flashcard sessions use <span className="text-blue-600 font-semibold">Spaced Repetition</span>, and
-              prioritize cards you answer incorrectly so you can focus on the areas you already struggle with.
+              Every session targets your weak spots, turning them into strengths.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-6">
@@ -880,10 +883,10 @@ export default function ProjectsPage() {
             {/* Generate Button */}
             <Button
               onClick={generateFlashcardsFromSelection}
-              disabled={selectedDocumentIds.length === 0 || generatingFlashcards}
+              disabled={selectedDocumentIds.length === 0 || generatingFlashcards.size > 0}
               className="w-full h-12 text-base font-semibold bg-black hover:bg-gray-800 text-white dark:bg-white dark:text-black dark:hover:bg-gray-200"
             >
-              {generatingFlashcards ? (
+              {generatingFlashcards.size > 0 ? (
                 <>
                   <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin mr-2" />
                   Generating...
