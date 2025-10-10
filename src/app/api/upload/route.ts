@@ -4,6 +4,9 @@ import { authOptions } from "@/lib/authoption"
 import { getPayload } from "payload"
 import configPromise from "@payload-config"
 
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
@@ -187,6 +190,9 @@ export async function POST(request: NextRequest) {
           throw retryError // Re-throw if not a connection error or max retries reached
         }
       }
+
+      {/*export const runtime = 'nodejs';
+export const maxDuration = 60; */}
 
       if (!documentResult) {
         throw new Error("Document creation returned null/undefined result")
