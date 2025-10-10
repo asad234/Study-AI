@@ -1,6 +1,4 @@
 "use client"
-
-import UnderDevelopmentBanner from "@/components/common/underDevelopment"
 import { useState } from "react"
 
 const FeatureRequest = () => {
@@ -66,7 +64,6 @@ const FeatureRequest = () => {
 
   return (
     <div className="max-w-2xl mx-auto p-6 bg-white dark:bg-gray-900 rounded-lg shadow-md text-gray-900 dark:text-gray-100">
-      <UnderDevelopmentBanner/>
       <h1 className="text-2xl font-bold mb-6">Feature Request</h1>
       <p className="mb-6 text-gray-700 dark:text-gray-300">
         We’d love to hear your ideas! Please fill out the form below to request a new feature.

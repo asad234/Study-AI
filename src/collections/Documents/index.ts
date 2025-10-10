@@ -1,39 +1,17 @@
-import type { CollectionConfig } from "payload"
+// src/collections/Documents.ts
+import { CollectionConfig } from "payload"
 
 export const Documents: CollectionConfig = {
   slug: "documents",
+  auth: false,
+  admin: {
+    useAsTitle: "title",
+  },
   access: {
-    create: ({ req: { user } }) => !!user,
-    read: ({ req: { user } }) => {
-      if (user) {
-        return {
-          user: {
-            equals: user.id,
-          },
-        }
-      }
-      return false
-    },
-    update: ({ req: { user } }) => {
-      if (user) {
-        return {
-          user: {
-            equals: user.id,
-          },
-        }
-      }
-      return false
-    },
-    delete: ({ req: { user } }) => {
-      if (user) {
-        return {
-          user: {
-            equals: user.id,
-          },
-        }
-      }
-      return false
-    },
+    read: () => true,
+    create: () => true,
+    update: () => true,
+    delete: () => true,
   },
   fields: [
     {
@@ -50,22 +28,18 @@ export const Documents: CollectionConfig = {
     {
       name: "file_name",
       type: "text",
-      required: true,
     },
     {
       name: "file_path",
       type: "text",
-      required: true,
     },
     {
       name: "file_type",
       type: "text",
-      required: true,
     },
     {
       name: "file_size",
       type: "number",
-      required: true,
     },
     {
       name: "status",
@@ -77,12 +51,22 @@ export const Documents: CollectionConfig = {
         { label: "Failed", value: "failed" },
       ],
       defaultValue: "pending",
-      required: true,
     },
     {
       name: "processing_progress",
       type: "number",
       defaultValue: 0,
+      min: 0,
+      max: 100,
+    },
+    // ✅ ADD THIS FIELD - This is where extracted text will be stored
+    {
+      name: "notes",
+      type: "textarea",
+      admin: {
+        description: "Extracted text content from the uploaded document",
+        placeholder: "Text will be automatically extracted after upload...",
+      },
     },
     {
       name: "metadata",
@@ -90,8 +74,9 @@ export const Documents: CollectionConfig = {
     },
     {
       name: "media_file",
-      type: "relationship",
+      type: "upload",
       relationTo: "media",
+      required: true,
     },
     {
       name: "project",
@@ -99,5 +84,6 @@ export const Documents: CollectionConfig = {
       relationTo: "projects",
     },
   ],
-  timestamps: true,
 }
+
+export default Documents

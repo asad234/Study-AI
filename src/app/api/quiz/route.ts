@@ -29,6 +29,56 @@ const openai = new OpenAI({
 export const runtime = "nodejs"
 export const maxDuration = 60
 
+// Helper function to detect document language
+async function detectLanguage(text: string): Promise<'sv' | 'en'> {
+  try {
+    // Take a sample of the text (first 1000 characters should be enough)
+    const sample = text.slice(0, 1000)
+    
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini", // Using mini model for cost efficiency
+      messages: [
+        {
+          role: "system",
+          content: "You are a language detector. Analyze the text and respond with ONLY 'sv' for Swedish or 'en' for English or other languages. If the language is not Swedish, always respond with 'en'."
+        },
+        {
+          role: "user",
+          content: `Detect the language of this text:\n\n${sample}`
+        }
+      ],
+      temperature: 0,
+      max_tokens: 10,
+    })
+
+    const detectedLang = response.choices[0]?.message.content?.trim().toLowerCase()
+    
+    // Return 'sv' only if Swedish is detected, otherwise default to 'en'
+    return detectedLang === 'sv' ? 'sv' : 'en'
+  } catch (error) {
+    console.error("Language detection error:", error)
+    // Default to English if detection fails
+    return 'en'
+  }
+}
+
+// Helper function to get language-specific instructions
+function getLanguageInstructions(language: 'sv' | 'en'): string {
+  if (language === 'sv') {
+    return `VIKTIGT: Skapa ALLA frågor, svarsalternativ och förklaringar på SVENSKA.
+- Frågan ska vara på svenska
+- Alla svarsalternativ ska vara på svenska
+- Förklaringen ska vara på svenska
+- Använd korrekt svensk grammatik och stavning`
+  }
+  
+  return `IMPORTANT: Create ALL questions, answer options, and explanations in ENGLISH.
+- The question must be in English
+- All answer options must be in English
+- The explanation must be in English
+- Use proper English grammar and spelling`
+}
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
@@ -69,46 +119,84 @@ export async function POST(request: NextRequest) {
       where: {
         id: { in: documentIds },
         user: { equals: userProfile.id },
+        status: { equals: "ready" },
       },
     })
 
     if (!documents.docs.length) {
-      return NextResponse.json({ error: "No documents found or access denied" }, { status: 404 })
+      return NextResponse.json({ error: "No ready documents found or access denied" }, { status: 404 })
     }
+
+    console.log(`Generating quiz from ${documents.docs.length} documents`)
 
     const allQuestions: any[] = []
     const questionsPerDoc = Math.ceil(questionCount / documents.docs.length)
+    const processedDocuments: string[] = []
+    const failedDocuments: string[] = []
 
     for (const document of documents.docs) {
-      const difficulty = difficulties[Math.floor(Math.random() * difficulties.length)]
-
-      const documentContent = `Document Title: ${document.title || document.file_name || "Untitled"}
-File Type: ${document.file_type || "Unknown"}
-Difficulty Level: ${difficulty}
-
-This document contains educational material that needs to be converted into quiz questions.`
-
       try {
+        const docId = String(document.id)
+        const docTitle = String(document.title || document.file_name || "Untitled")
+        const documentContent = document.notes || ""
+
+        if (!documentContent || documentContent.length < 50) {
+          console.error(`Document ${docId} has no extracted content`)
+          failedDocuments.push(docId)
+          continue
+        }
+
+        console.log(`Document "${docTitle}" content length: ${documentContent.length} characters`)
+
+        // 🆕 DETECT LANGUAGE
+        const detectedLanguage = await detectLanguage(documentContent)
+        console.log(`Detected language for "${docTitle}": ${detectedLanguage}`)
+
+        const difficulty = difficulties[Math.floor(Math.random() * difficulties.length)]
+
+        // 🆕 GET LANGUAGE-SPECIFIC INSTRUCTIONS
+        const languageInstructions = getLanguageInstructions(detectedLanguage)
+        const languageName = detectedLanguage === 'sv' ? 'Swedish' : 'English'
+
+        const documentContext = `Document Title: ${docTitle}
+Difficulty Level: ${difficulty}
+Document Language: ${languageName}
+
+DOCUMENT CONTENT:
+${documentContent}
+
+This is the actual content extracted from the student's study material. Generate quiz questions based ONLY on this content.`
+
+        console.log(`Generating ${questionsPerDoc} questions in ${languageName} at ${difficulty} difficulty for: ${docTitle}`)
+
         const completion = await openai.chat.completions.create({
-          model: "gpt-4o-mini-2024-07-18",
+          model: "gpt-4o",
           messages: [
             {
               role: "system",
-              content: `You are an expert quiz creator. Generate educational multiple-choice questions based on provided content.
+              content: `You are an expert quiz creator. Generate educational multiple-choice questions based ONLY on the provided document content.
+
+${languageInstructions}
 
 INSTRUCTIONS:
 1. Create exactly ${questionsPerDoc} multiple-choice questions
 2. Each question must have exactly 4 options
 3. Difficulty level: ${difficulty}
-4. Include detailed explanations for correct answers
-5. Questions should test understanding, not just memorization
-6. Ensure content is academically accurate
+4. Base ALL questions on the actual document content provided
+5. Include detailed explanations for correct answers
+6. Questions should test understanding of the document material
+7. Ensure content is accurate to the source material
+
+CRITICAL: 
+- Only create questions about information that appears in the document content
+- Do not add general knowledge questions
+- ALL content (questions, options, explanations) must be in ${languageName}
 
 Follow the provided JSON schema exactly.`,
             },
             {
               role: "user",
-              content: `Document Information:\n${documentContent}\n\nGenerate ${questionsPerDoc} quiz questions at ${difficulty} difficulty level.`,
+              content: documentContext,
             },
           ],
           response_format: zodResponseFormat(QuizCollectionSchema, "quiz"),
@@ -118,7 +206,8 @@ Follow the provided JSON schema exactly.`,
         const aiResponseContent = completion.choices[0]?.message.content
 
         if (!aiResponseContent) {
-          console.error(`No AI response for document ${document.id}`)
+          console.error(`No AI response for document ${docId}`)
+          failedDocuments.push(docId)
           continue
         }
 
@@ -126,40 +215,51 @@ Follow the provided JSON schema exactly.`,
         try {
           aiResponse = JSON.parse(aiResponseContent)
         } catch (parseError) {
-          console.error(`Failed to parse AI response for document ${document.id}`)
+          console.error(`Failed to parse AI response for document ${docId}`)
+          failedDocuments.push(docId)
           continue
         }
 
         const parsed = QuizCollectionSchema.safeParse(aiResponse)
         if (!parsed.success) {
-          console.error(`Validation failed for document ${document.id}:`, parsed.error.issues)
+          console.error(`Validation failed for document ${docId}:`, parsed.error.issues)
+          failedDocuments.push(docId)
           continue
         }
 
         const questions = parsed.data.questions.map((q: any, index: number) => ({
           ...q,
-          id: `${document.id}-${index}-${Date.now()}`,
+          id: `${docId}-${index}-${Date.now()}`,
         }))
 
         allQuestions.push(...questions)
+        processedDocuments.push(docId)
+        console.log(`Successfully generated ${questions.length} questions from document ${docId}`)
       } catch (error) {
-        console.error(`Failed to generate questions for document ${document.id}:`, error)
+        console.error(`Failed to generate questions for document ${String(document.id)}:`, error)
+        failedDocuments.push(String(document.id))
       }
     }
 
     if (allQuestions.length === 0) {
-      return NextResponse.json({ error: "Failed to generate any questions" }, { status: 500 })
+      return NextResponse.json({ 
+        error: "Failed to generate any questions",
+        solution: "Please ensure your documents contain extracted text content. Upload PDF or Word documents and wait for text extraction to complete.",
+        failedDocuments,
+      }, { status: 500 })
     }
 
     const shuffledQuestions = allQuestions.sort(() => Math.random() - 0.5).slice(0, questionCount)
+
+    console.log(`Total questions generated: ${allQuestions.length}, using: ${shuffledQuestions.length}`)
 
     const quiz = await payload.create({
       collection: "quizzes",
       data: {
         user: userProfile.id,
         document: documentIds[0],
-        title: `Quiz from ${documents.docs.length} document${documents.docs.length > 1 ? "s" : ""}`,
-        description: `Generated quiz with ${shuffledQuestions.length} questions`,
+        title: `Quiz from ${processedDocuments.length} document${processedDocuments.length > 1 ? "s" : ""}`,
+        description: `AI-generated quiz with ${shuffledQuestions.length} questions based on your study materials`,
         questions: shuffledQuestions,
         settings: {
           shuffleQuestions: true,
@@ -177,9 +277,42 @@ Follow the provided JSON schema exactly.`,
         questions: shuffledQuestions,
         settings: quiz.settings,
       },
+      metadata: {
+        totalGenerated: allQuestions.length,
+        processedDocuments: processedDocuments.length,
+        failedDocuments: failedDocuments.length,
+      },
+      message: `Successfully generated ${shuffledQuestions.length} questions from ${processedDocuments.length} document(s)`,
     })
   } catch (error) {
     console.error("Quiz generation error:", error)
-    return NextResponse.json({ error: "Failed to generate quiz" }, { status: 500 })
+
+    let status = 500
+    let errorMessage = "Failed to generate quiz"
+    let solution = "Please try again later or contact support if the problem persists"
+    let details = null
+
+    if (error instanceof OpenAI.APIError) {
+      status = error.status || 502
+      errorMessage = "AI quiz generation service is currently unavailable"
+      solution = "Please try again in a few minutes. If the problem continues, check our status page."
+      details = {
+        code: error.code || "openai_api_error",
+        message: error.message,
+      }
+    } else if (error instanceof Error) {
+      details = {
+        message: error.message,
+      }
+    }
+
+    return NextResponse.json(
+      {
+        error: errorMessage,
+        solution,
+        ...(details && { details }),
+      },
+      { status },
+    )
   }
 }

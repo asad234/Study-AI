@@ -160,14 +160,15 @@ export async function POST(request: NextRequest) {
               file_path: ("url" in mediaResult ? mediaResult.url : "") || "",
               file_type: file.type,
               file_size: file.size,
-              status: "ready",
-              processing_progress: 100,
+              status: "pending", // Changed from "ready" to "pending" - will be "ready" after extraction
+              processing_progress: 0, // Changed from 100 to 0
               metadata: {
                 originalName: file.name,
                 uploadedAt: new Date().toISOString(),
                 uploadedBy: session.user.email,
               },
               media_file: mediaResult.id,
+              // notes will be added by the extraction API
             },
           })
           break // Success, exit retry loop
@@ -219,13 +220,49 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Failed to create document record" }, { status: 500 })
     }
 
+    // ✅ NEW: Trigger text extraction in the background
+    console.log("Upload - Triggering text extraction for document:", documentResult.id)
+    triggerTextExtraction(documentResult.id).catch((error) => {
+      console.error("Upload - Background extraction trigger failed:", error)
+      // Don't fail the upload if extraction trigger fails
+    })
+
     return NextResponse.json({
       success: true,
       document: documentResult,
       media: mediaResult,
+      message: "Document uploaded successfully. Text extraction in progress...",
     })
   } catch (error) {
     console.error("Upload error:", error)
     return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+  }
+}
+
+// ✅ NEW: Helper function to trigger text extraction
+async function triggerTextExtraction(documentId: string | number) {
+  try {
+    const extractUrl = `${process.env.NEXT_PUBLIC_SERVER_URL}/api/documents/${documentId}/extract`
+    
+    console.log("Triggering extraction at:", extractUrl)
+    
+    const response = await fetch(extractUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-internal-api-key": process.env.INTERNAL_API_KEY || "default-key-change-in-production",
+      },
+    })
+
+    if (response.ok) {
+      const data = await response.json()
+      console.log("✅ Text extraction completed:", data)
+    } else {
+      const errorText = await response.text()
+      console.error("❌ Text extraction failed:", response.status, errorText)
+    }
+  } catch (error) {
+    console.error("❌ Error triggering text extraction:", error)
+    throw error
   }
 }

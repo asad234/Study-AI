@@ -23,7 +23,7 @@ interface Message {
     introduction?: string
     elements?: Array<{ title: string; explanation: string }>
     summary?: string
-    context?: string
+    source?: string
   }
 }
 
@@ -53,49 +53,41 @@ const parseStructuredResponse = (text: string) => {
     introduction: "",
     elements: [],
     summary: "",
-    context: "",
+    source: "",
   }
 
   try {
-    const introMatch = text.split("---")[0].match(/\[CONCEPT INTRODUCTION\](.*?)(?=\[|$)/s)
-    if (introMatch && introMatch[1]) {
-      result.introduction = introMatch[1].trim()
-    } else {
-      const parts = text.split("---")
-      if (parts.length > 0) {
-        result.introduction = parts[0].replace(/\[CONCEPT INTRODUCTION\]/g, "").trim()
-      }
+    // Extract introduction (text before first ELEMENT)
+    const firstElementIndex = text.indexOf('ELEMENT 1:')
+    if (firstElementIndex > 0) {
+      result.introduction = text.substring(0, firstElementIndex).trim()
     }
 
-    const keyElementsMatch = text.match(/\[KEY ELEMENTS\](.*?)(?=\[SUMMARY\]|---|$)/s)
-    if (keyElementsMatch && keyElementsMatch[1]) {
-      const elementsText = keyElementsMatch[1]
-      const elementRegex = /ELEMENT \d+: ([^\n]+)\nExplanation: ([^\n]+)/g
-      let match
-      while ((match = elementRegex.exec(elementsText)) !== null) {
-        result.elements.push({
-          title: match[1].trim(),
-          explanation: match[2].trim(),
-        })
-      }
+    // Extract elements (ELEMENT 1, ELEMENT 2, etc.)
+    const elementRegex = /ELEMENT \d+: ([^\n]+)\s*\n\s*Explanation: ([^\n]+(?:\n(?!ELEMENT|SUMMARY)[^\n]+)*)/g
+    let match
+    while ((match = elementRegex.exec(text)) !== null) {
+      result.elements.push({
+        title: match[1].trim(),
+        explanation: match[2].trim(),
+      })
     }
 
-    const summaryMatch = text.match(/\[SUMMARY\](.*?)(?=\[RELATED CONTEXT\]|---|$)/s)
-    if (summaryMatch && summaryMatch[1]) {
-      result.summary = summaryMatch[1].replace(/SUMMARY:/, "").trim()
+    // Extract summary
+    const summaryMatch = text.match(/SUMMARY:\s*\n([^(]+)/s)
+    if (summaryMatch) {
+      result.summary = summaryMatch[1].trim()
     }
 
-    const contextMatch = text.match(/\[RELATED CONTEXT\](.*?)(?=$)/s)
-    if (contextMatch && contextMatch[1]) {
-      result.context = contextMatch[1].replace(/CONTEXT:/, "").trim()
-    } else {
-      const contextFallback = text.match(/CONTEXT: (.*?)(?=$)/s)
-      if (contextFallback && contextFallback[1]) {
-        result.context = contextFallback[1].trim()
-      }
+    // Extract source
+    const sourceMatch = text.match(/\((Källa|Source|Källor|Sources):.*?\)/i)
+    if (sourceMatch) {
+      result.source = sourceMatch[0]
     }
+
   } catch (error) {
     console.error("Error parsing structured response:", error)
+    // Fallback to raw content
     result.introduction = text
   }
 
@@ -190,19 +182,11 @@ export default function AIChatPage() {
       }
 
       try {
-        console.log("Fetching documents for projects:", selectedProjects)
-
         const documentPromises = selectedProjects.map((projectId) =>
-          fetch(`/api/projects/${projectId}/documents`).then((res) => {
-            console.log("Response for project", projectId, "status:", res.status)
-            return res.json()
-          }),
+          fetch(`/api/projects/${projectId}/documents`).then((res) => res.json()),
         )
         const results = await Promise.all(documentPromises)
-        console.log("Document fetch results:", results)
-
         const allDocs = results.flatMap((result) => result.documents || [])
-        console.log("Total documents found:", allDocs.length, allDocs)
         setAvailableDocuments(allDocs)
       } catch (error) {
         console.error("Failed to fetch documents:", error)
@@ -261,13 +245,6 @@ export default function AIChatPage() {
       return
     }
 
-    console.log("Sending message:", {
-      message: inputMessage,
-      conversationId,
-      documentIds: selectedDocuments,
-      projectIds: selectedProjects,
-    })
-
     const userMessage: Message = {
       id: Date.now().toString(),
       content: inputMessage,
@@ -293,28 +270,22 @@ export default function AIChatPage() {
         }),
       })
 
-      console.log("Chat API response status:", response.status)
       const data = await response.json()
-      console.log("Chat API response data:", data)
 
-      if (response.ok) {
-        if (data.success) {
-          const structuredContent = parseStructuredResponse(data.message.content)
+      if (response.ok && data.success) {
+        const structuredContent = parseStructuredResponse(data.message.content)
 
-          const aiMessage: Message = {
-            id: data.message.id,
-            content: data.message.content,
-            sender: "ai",
-            timestamp: new Date(data.message.timestamp),
-            relatedFiles: data.message.relatedFiles || [],
-            structuredContent: structuredContent,
-          }
-
-          setMessages((prev) => [...prev, aiMessage])
-          setConversationId(data.conversationId)
-        } else {
-          throw new Error(data.error || "Failed to send message")
+        const aiMessage: Message = {
+          id: data.message.id,
+          content: data.message.content,
+          sender: "ai",
+          timestamp: new Date(data.message.timestamp),
+          relatedFiles: data.message.relatedFiles || [],
+          structuredContent: structuredContent,
         }
+
+        setMessages((prev) => [...prev, aiMessage])
+        setConversationId(data.conversationId)
       } else {
         throw new Error(data.error || "Failed to send message")
       }
@@ -536,35 +507,50 @@ export default function AIChatPage() {
                     >
                       {message.sender === "ai" && message.structuredContent ? (
                         <div className="space-y-4">
+                          {/* Introduction */}
                           {message.structuredContent.introduction && (
-                            <div className="text-sm leading-relaxed">{message.structuredContent.introduction}</div>
+                            <div className="text-sm leading-relaxed text-gray-800 dark:text-gray-200 pb-3 border-b border-gray-200 dark:border-gray-700">
+                              {message.structuredContent.introduction}
+                            </div>
                           )}
 
+                          {/* Elements - WITHOUT "ELEMENT" label */}
                           {message.structuredContent.elements && message.structuredContent.elements.length > 0 && (
-                            <div className="space-y-4">
-                              <div className="font-semibold text-sm border-b pb-1">KEY ELEMENTS:</div>
+                            <div className="space-y-3">
                               {message.structuredContent.elements.map((element, index) => (
-                                <div key={index} className="bg-blue-50/30 dark:bg-blue-900/20 p-3 rounded-lg">
-                                  <div className="font-medium text-sm">{element.title}</div>
-                                  <div className="text-sm mt-1">{element.explanation}</div>
+                                <div key={index} className="bg-blue-50/40 dark:bg-blue-900/20 p-4 rounded-lg border-l-4 border-blue-500">
+                                  <div className="font-semibold text-sm text-blue-900 dark:text-blue-100 mb-2">
+                                    {element.title}
+                                  </div>
+                                  <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                                    {element.explanation}
+                                  </div>
                                 </div>
                               ))}
                             </div>
                           )}
 
+                          {/* Summary */}
                           {message.structuredContent.summary && (
-                            <div className="bg-green-50/30 dark:bg-green-900/20 p-3 rounded-lg">
-                              <div className="font-semibold text-sm">SUMMARY:</div>
-                              <div className="text-sm mt-1">{message.structuredContent.summary}</div>
+                            <div className="bg-green-50/40 dark:bg-green-900/20 p-4 rounded-lg border-l-4 border-green-500">
+                              <div className="font-semibold text-sm text-green-900 dark:text-green-100 mb-2">
+                                SUMMARY
+                              </div>
+                              <div className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed">
+                                {message.structuredContent.summary}
+                              </div>
                             </div>
                           )}
 
-                          {message.structuredContent.context && (
-                            <div className="text-xs opacity-80 mt-2">{message.structuredContent.context}</div>
+                          {/* Source */}
+                          {message.structuredContent.source && (
+                            <div className="text-xs text-gray-600 dark:text-gray-400 italic pt-3 border-t border-gray-200 dark:border-gray-700">
+                              {message.structuredContent.source}
+                            </div>
                           )}
                         </div>
                       ) : (
-                        <p className="text-sm leading-relaxed">{message.content}</p>
+                        <p className="text-sm leading-relaxed whitespace-pre-line">{message.content}</p>
                       )}
 
                       {message.relatedFiles && message.relatedFiles.length > 0 && (

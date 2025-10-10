@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { fetchRecentFiles } from "@/utilities/fetchRecentFiles" // Import fetchRecentFiles
+import { fetchRecentFiles } from "@/utilities/fetchRecentFiles"
 
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -22,6 +22,8 @@ import {
   ImageIcon,
   File,
   X,
+  MessageCircle,
+  UserPlus,
 } from "lucide-react"
 import Link from "next/link"
 import { useState, useEffect, useCallback } from "react"
@@ -43,8 +45,6 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { cn } from "@/lib/utils"
 import { format } from "date-fns"
 import { useToast } from "@/hooks/use-toast"
-import FeedbackForm from "@/components/common/feedback"
-import Invitations from "@/components/common/invatations"
 
 interface Document {
   id: string
@@ -61,6 +61,223 @@ interface UserProfile {
   email: string
   bio?: string
   location?: string
+}
+
+// Feedback Dialog Component
+const FeedbackDialog = () => {
+  const [formData, setFormData] = useState({
+    helpfulness: "",
+    improvement: "",
+  })
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [status, setStatus] = useState<{ type: "success" | "error" | null; message: string }>({
+    type: null,
+    message: "",
+  })
+
+  const options = ["Very helpful", "Helpful", "Neutral", "Not helpful"]
+
+  const handleSubmit = async () => {
+    if (!formData.helpfulness) {
+      alert("Please select an option before submitting.")
+      return
+    }
+
+    setIsSubmitting(true)
+    setStatus({ type: null, message: "" })
+
+    try {
+      const response = await fetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      })
+
+      const result = await response.json()
+
+      if (response.ok) {
+        setStatus({
+          type: "success",
+          message: "Thank you! Your feedback has been submitted.",
+        })
+        setFormData({ helpfulness: "", improvement: "" })
+      } else {
+        setStatus({
+          type: "error",
+          message: result.error || "Something went wrong. Please try again.",
+        })
+      }
+    } catch (error) {
+      setStatus({
+        type: "error",
+        message: "Network error. Please try again.",
+      })
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <DialogContent className="sm:max-w-[500px]">
+      <DialogHeader>
+        <DialogTitle>Quick Feedback</DialogTitle>
+        <DialogDescription>
+          Help us improve Study AI by sharing your experience
+        </DialogDescription>
+      </DialogHeader>
+      <div className="space-y-6 pt-4">
+        {status.type && (
+          <div
+            className={`p-3 rounded-lg text-sm ${
+              status.type === "success"
+                ? "bg-green-50 text-green-700 border border-green-200 dark:bg-green-900 dark:text-green-200 dark:border-green-800"
+                : "bg-red-50 text-red-700 border border-red-200 dark:bg-red-900 dark:text-red-200 dark:border-red-800"
+            }`}
+          >
+            {status.message}
+          </div>
+        )}
+
+        <div>
+          <Label className="text-sm font-medium mb-2 block">
+            How helpful was Study AI in preparing for your exam/project?
+          </Label>
+          <div className="space-y-2">
+            {options.map((option) => (
+              <label key={option} className="flex items-center space-x-2 cursor-pointer">
+                <input
+                  type="radio"
+                  name="helpfulness"
+                  value={option}
+                  checked={formData.helpfulness === option}
+                  onChange={() => setFormData((prev) => ({ ...prev, helpfulness: option }))}
+                  disabled={isSubmitting}
+                  className="text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm">{option}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+
+        <div>
+          <Label htmlFor="improvement" className="text-sm font-medium mb-2 block">
+            What's one thing we can improve?
+          </Label>
+          <Textarea
+            id="improvement"
+            value={formData.improvement}
+            onChange={(e) => setFormData((prev) => ({ ...prev, improvement: e.target.value }))}
+            placeholder="Your suggestion..."
+            disabled={isSubmitting}
+            className="h-24 resize-none"
+          />
+        </div>
+
+        <div className="flex justify-end gap-2">
+          <Button onClick={handleSubmit} disabled={isSubmitting}>
+            {isSubmitting ? "Submitting..." : "Submit Feedback"}
+          </Button>
+        </div>
+      </div>
+    </DialogContent>
+  )
+}
+
+// Invitations Dialog Component
+const InvitationsDialog = () => {
+  const [invitationForm, setInvitationForm] = useState({
+    email: "",
+    firstName: "",
+    lastName: "",
+  })
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
+  const handleInvitationChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target
+    setInvitationForm({ ...invitationForm, [name]: value })
+  }
+
+  const sendInvitation = async () => {
+    setIsSubmitting(true)
+    try {
+      // Your existing invitation logic here
+      const response = await fetch("/api/invitations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(invitationForm),
+      })
+      
+      if (response.ok) {
+        setInvitationForm({ email: "", firstName: "", lastName: "" })
+      }
+    } catch (error) {
+      console.error("Error sending invitation:", error)
+    } finally {
+      setIsSubmitting(false)
+    }
+  }
+
+  return (
+    <DialogContent className="sm:max-w-[500px]">
+      <DialogHeader>
+        <DialogTitle>Send Invitation</DialogTitle>
+        <DialogDescription>
+          Invite friends and colleagues to join Study AI
+        </DialogDescription>
+      </DialogHeader>
+      <div className="space-y-4 pt-4">
+        <div>
+          <Label htmlFor="email" className="text-sm font-medium mb-1 block">
+            Email <span className="text-red-500">*</span>
+          </Label>
+          <Input
+            id="email"
+            type="email"
+            name="email"
+            value={invitationForm.email}
+            onChange={handleInvitationChange}
+            placeholder="Enter email"
+            required
+          />
+        </div>
+        <div>
+          <Label htmlFor="firstName" className="text-sm font-medium mb-1 block">
+            First Name
+          </Label>
+          <Input
+            id="firstName"
+            type="text"
+            name="firstName"
+            value={invitationForm.firstName}
+            onChange={handleInvitationChange}
+            placeholder="Enter first name"
+          />
+        </div>
+        <div>
+          <Label htmlFor="lastName" className="text-sm font-medium mb-1 block">
+            Last Name
+          </Label>
+          <Input
+            id="lastName"
+            type="text"
+            name="lastName"
+            value={invitationForm.lastName}
+            onChange={handleInvitationChange}
+            placeholder="Enter last name"
+          />
+        </div>
+        <div className="flex justify-end gap-2 pt-2">
+          <Button
+            onClick={sendInvitation}
+            disabled={!invitationForm.email.trim() || isSubmitting}
+          >
+            {isSubmitting ? "Sending..." : "Send Invitation"}
+          </Button>
+        </div>
+      </div>
+    </DialogContent>
+  )
 }
 
 export default function DashboardPage() {
@@ -291,26 +508,9 @@ export default function DashboardPage() {
           </DialogTrigger>
         </div>
 
-        {/* Quick Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          {studyStats.map((stat, index) => (
-            <Card key={index}>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-sm font-medium text-gray-600 dark:text-gray-400">{stat.label}</p>
-                    <p className="text-2xl font-bold text-gray-900 dark:text-white">{stat.value}</p>
-                  </div>
-                  <div className="text-sm text-green-600 dark:text-green-400">{stat.change}</div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-
         {/* Study Tools */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-          <Link href="/dashboard/cards">
+          <Link href="/dashboard/flash-cards">
             <Card className="hover:shadow-lg transition-shadow cursor-pointer border-2 hover:border-primary/50">
               <CardHeader className="text-center">
                 <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900 rounded-lg flex items-center justify-center mx-auto mb-2">
@@ -358,16 +558,41 @@ export default function DashboardPage() {
             </Card>
           </Link>
         </div>
+
+        {/* Feedback and Invitations as Cards */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="gap-6">
-          {/* Recent Files */}
-            <FeedbackForm/>
+          {/* Quick Feedback Card with Dialog */}
+          <Dialog>
+            <DialogTrigger asChild>
+              <Card className="hover:shadow-lg transition-shadow cursor-pointer border-2 hover:border-primary/50">
+                <CardHeader className="text-center">
+                  <div className="w-12 h-12 bg-orange-100 dark:bg-orange-900 rounded-lg flex items-center justify-center mx-auto mb-2">
+                    <MessageCircle className="w-6 h-6 text-orange-600 dark:text-orange-400" />
+                  </div>
+                  <CardTitle className="text-lg">Quick Feedback</CardTitle>
+                  <CardDescription>Share your experience with us</CardDescription>
+                </CardHeader>
+              </Card>
+            </DialogTrigger>
+            <FeedbackDialog />
+          </Dialog>
+
+          {/* Send Invitations Card with Dialog */}
+          <Dialog>
+            <DialogTrigger asChild>
+              <Card className="hover:shadow-lg transition-shadow cursor-pointer border-2 hover:border-primary/50">
+                <CardHeader className="text-center">
+                  <div className="w-12 h-12 bg-teal-100 dark:bg-teal-900 rounded-lg flex items-center justify-center mx-auto mb-2">
+                    <UserPlus className="w-6 h-6 text-teal-600 dark:text-teal-400" />
+                  </div>
+                  <CardTitle className="text-lg">Send Invitations</CardTitle>
+                  <CardDescription>Invite friends to join Study AI</CardDescription>
+                </CardHeader>
+              </Card>
+            </DialogTrigger>
+            <InvitationsDialog />
+          </Dialog>
         </div>
-        <div className="gap-6">
-          {/* Study Progress */}
-          <Invitations/>
-        </div>
-      </div>
       </div>
 
       <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
