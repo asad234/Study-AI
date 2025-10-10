@@ -55,13 +55,13 @@ const navigationItems = [
     gradient: "from-violet-500 to-purple-600",
     lightGradient: "from-violet-400 to-purple-500",
   },
-  //{
-    //title: "Upload Files",
-    //url: "/dashboard/upload",
-    //icon: CloudUpload,
-    //gradient: "from-blue-500 to-cyan-600",
-    //lightGradient: "from-blue-400 to-cyan-500",
-  //},
+  {
+    title: "Upload Files",
+    url: "/dashboard/upload",
+    icon: CloudUpload,
+    gradient: "from-blue-500 to-cyan-600",
+    lightGradient: "from-blue-400 to-cyan-500",
+  },
    {
     title: "Projects",
     url: "/dashboard/projects",
