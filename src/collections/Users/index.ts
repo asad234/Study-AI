@@ -3,11 +3,8 @@ import type { CollectionConfig } from "payload"
 export const Users: CollectionConfig = {
   slug: "users",
   auth: {
-    // Configure to allow both OAuth and credentials
-    //disableLocalStrategy: false, // Keep local strategy enabled
     maxLoginAttempts: 5,
     lockTime: 600 * 1000, // 10 minutes
-    // Add this to handle OAuth users without passwords
     verify: false, // Disable email verification for now
   },
   access: {
@@ -18,7 +15,7 @@ export const Users: CollectionConfig = {
     update: () => true,
   },
   admin: {
-    defaultColumns: ["name", "email", "roles", "authType", "onboardingCompleted"],
+    defaultColumns: ["name", "email", "roles", "plan", "subscriptionStatus"],
     useAsTitle: "name",
   },
   fields: [
@@ -70,6 +67,139 @@ export const Users: CollectionConfig = {
         description: "Whether the user has completed the onboarding process",
       },
     },
+    // Stripe Subscription Fields
+    {
+      name: "plan",
+      type: "select",
+      options: [
+        { label: "Free Trial", value: "free_trial" },
+        { label: "Pro", value: "pro" },
+      ],
+      defaultValue: "free_trial",
+      required: true,
+      admin: {
+        position: "sidebar",
+        description: "User's current subscription plan",
+      },
+    },
+    {
+      name: "stripeCustomerId",
+      type: "text",
+      unique: true,
+      admin: {
+        position: "sidebar",
+        description: "Stripe Customer ID",
+        readOnly: true,
+      },
+    },
+    {
+      name: "subscriptionId",
+      type: "text",
+      admin: {
+        position: "sidebar",
+        description: "Stripe Subscription ID",
+        readOnly: true,
+      },
+    },
+    {
+      name: "subscriptionStatus",
+      type: "select",
+      options: [
+        { label: "Active", value: "active" },
+        { label: "Canceled", value: "canceled" },
+        { label: "Past Due", value: "past_due" },
+        { label: "Unpaid", value: "unpaid" },
+        { label: "Incomplete", value: "incomplete" },
+        { label: "Trialing", value: "trialing" },
+      ],
+      admin: {
+        position: "sidebar",
+        description: "Current subscription status",
+        readOnly: true,
+      },
+    },
+    {
+      name: "billingPeriod",
+      type: "select",
+      options: [
+        { label: "Monthly", value: "monthly" },
+        { label: "Yearly", value: "yearly" },
+      ],
+      admin: {
+        position: "sidebar",
+        description: "Billing cycle",
+        readOnly: true,
+      },
+    },
+    {
+      name: "currentPeriodEnd",
+      type: "date",
+      admin: {
+        position: "sidebar",
+        description: "When the current billing period ends",
+        readOnly: true,
+        date: {
+          displayFormat: "MMM dd, yyyy",
+        },
+      },
+    },
+    // Usage tracking fields
+    {
+      name: "usageStats",
+      type: "group",
+      admin: {
+        description: "Track usage against plan limits",
+      },
+      fields: [
+        {
+          name: "documentsUploaded",
+          type: "number",
+          defaultValue: 0,
+          admin: {
+            description: "Number of documents uploaded this month",
+          },
+        },
+        {
+          name: "flashcardsGenerated",
+          type: "number",
+          defaultValue: 0,
+          admin: {
+            description: "Number of flashcards generated this month",
+          },
+        },
+        {
+          name: "quizzesTaken",
+          type: "number",
+          defaultValue: 0,
+          admin: {
+            description: "Number of quizzes taken this month",
+          },
+        },
+        {
+          name: "examSimulationsTaken",
+          type: "number",
+          defaultValue: 0,
+          admin: {
+            description: "Number of exam simulations taken this month",
+          },
+        },
+        {
+          name: "projectsCreated",
+          type: "number",
+          defaultValue: 0,
+          admin: {
+            description: "Number of projects created",
+          },
+        },
+        {
+          name: "lastResetDate",
+          type: "date",
+          admin: {
+            description: "Last time usage stats were reset",
+          },
+        },
+      ],
+    },
   ],
   timestamps: true,
   hooks: {
@@ -91,6 +221,11 @@ export const Users: CollectionConfig = {
         // Ensure authType is set - only set if it's not already defined
         if (!data.authType) {
           data.authType = "credentials"
+        }
+
+        // Initialize plan for new users
+        if (operation === "create" && !data.plan) {
+          data.plan = "free_trial"
         }
 
         return data

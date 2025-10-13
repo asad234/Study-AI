@@ -76,6 +76,13 @@ export default function ProjectsPage() {
   const [projectToDelete, setProjectToDelete] = useState<Project | null>(null)
   const [deleteConfirmationText, setDeleteConfirmationText] = useState("")
 
+  const [projectName, setProjectName] = useState("")
+  const [description, setDescription] = useState("")
+  const [category, setCategory] = useState("")
+  const [studyGoal, setStudyGoal] = useState("")
+  const [targetDate, setTargetDate] = useState<Date | undefined>(undefined)
+  const [estimatedHours, setEstimatedHours] = useState("")
+
   const fetchProjects = async () => {
     if (status !== "authenticated") return
 
@@ -134,7 +141,20 @@ export default function ProjectsPage() {
       (newFile) =>
         !files.some((existingFile) => existingFile.name === newFile.name && existingFile.size === newFile.size),
     )
-    setFiles((prev) => [...prev, ...uniqueFiles])
+    
+    if (uniqueFiles.length > 0) {
+      setFiles((prev) => [...prev, ...uniqueFiles])
+      toast({
+        title: "Files added",
+        description: `${uniqueFiles.length} file(s) added to upload queue`,
+      })
+    } else if (newFiles.length > 0) {
+      toast({
+        title: "Files already added",
+        description: "These files are already in the upload queue",
+        variant: "destructive",
+      })
+    }
   }
 
   const handleCreateProjectForm = async () => {
@@ -153,6 +173,11 @@ export default function ProjectsPage() {
       const documentIds: string[] = []
 
       if (files.length > 0) {
+        toast({
+          title: "Uploading files...",
+          description: `Uploading ${files.length} file(s)`,
+        })
+
         for (const file of files) {
           const documentId = await uploadFileToServer(file)
           if (documentId) {
@@ -184,7 +209,7 @@ export default function ProjectsPage() {
       if (data.success) {
         toast({
           title: "Success!",
-          description: "Project created successfully",
+          description: `Project created successfully with ${documentIds.length} file(s)`,
         })
 
         setProjectName("")
@@ -215,10 +240,7 @@ export default function ProjectsPage() {
   const handleProjectFileUpload = (filesList: FileList) => {
     console.log("Project file upload triggered with files:", filesList.length)
     const newFiles = Array.from(filesList)
-    console.log(
-      "New files:",
-      newFiles.map((f) => ({ name: f.name, size: f.size })),
-    )
+    console.log("New files:", newFiles.map((f) => ({ name: f.name, size: f.size })))
 
     const uniqueFiles = newFiles.filter(
       (newFile) =>
@@ -226,44 +248,80 @@ export default function ProjectsPage() {
     )
     console.log("Unique files after filtering:", uniqueFiles.length)
 
-    setProjectFiles((prev) => {
-      const updated = [...prev, ...uniqueFiles]
-      console.log("Updated projectFiles state:", updated.length)
-      return updated
-    })
+    if (uniqueFiles.length > 0) {
+      setProjectFiles((prev) => {
+        const updated = [...prev, ...uniqueFiles]
+        console.log("Updated projectFiles state:", updated.length)
+        return updated
+      })
+      toast({
+        title: "Files ready",
+        description: `${uniqueFiles.length} file(s) ready to upload. Click "Upload Files" button.`,
+      })
+    } else if (newFiles.length > 0) {
+      toast({
+        title: "Files already added",
+        description: "These files are already in the upload queue",
+        variant: "destructive",
+      })
+    }
   }
 
   const uploadFilesToProject = async (projectId: string) => {
     console.log("Starting upload for project:", projectId, "with files:", projectFiles.length)
 
     if (projectFiles.length === 0) {
-      console.log("No files to upload")
+      toast({
+        title: "No files selected",
+        description: "Please select files to upload",
+        variant: "destructive",
+      })
       return
     }
 
     setUploadingFiles(true)
+    const documentIds: string[] = []
+    const failedFiles: string[] = []
+
     try {
-      const documentIds: string[] = []
+      toast({
+        title: "Uploading files...",
+        description: `Uploading ${projectFiles.length} file(s). Please wait...`,
+      })
 
       console.log("Uploading files to server...")
-      for (const file of projectFiles) {
-        console.log("Uploading file:", file.name)
-        const documentId = await uploadFileToServer(file)
-        if (documentId) {
-          console.log("File uploaded successfully, document ID:", documentId)
-          documentIds.push(documentId)
-        } else {
-          console.error("Failed to upload file:", file.name)
+      
+      // Upload all files in parallel for better performance
+      const uploadPromises = projectFiles.map(async (file) => {
+        try {
+          console.log("Uploading file:", file.name)
+          const documentId = await uploadFileToServer(file)
+          if (documentId) {
+            console.log("File uploaded successfully, document ID:", documentId)
+            documentIds.push(documentId)
+            return { success: true, file: file.name, documentId }
+          } else {
+            console.error("Failed to upload file:", file.name)
+            failedFiles.push(file.name)
+            return { success: false, file: file.name }
+          }
+        } catch (error) {
+          console.error("Error uploading file:", file.name, error)
+          failedFiles.push(file.name)
+          return { success: false, file: file.name, error }
         }
-      }
+      })
+
+      await Promise.all(uploadPromises)
 
       console.log("All files processed. Document IDs:", documentIds)
+      console.log("Failed files:", failedFiles)
 
       if (documentIds.length === 0) {
-        console.error(" No documents were uploaded successfully")
+        console.error("No documents were uploaded successfully")
         toast({
-          title: "Error",
-          description: "Failed to upload any files",
+          title: "Upload failed",
+          description: "No files were uploaded successfully",
           variant: "destructive",
         })
         return
@@ -288,7 +346,9 @@ export default function ProjectsPage() {
         console.log("Project updated successfully, refreshing projects...")
         toast({
           title: "Success!",
-          description: `${projectFiles.length} file(s) uploaded successfully`,
+          description: `${documentIds.length} file(s) uploaded successfully${
+            failedFiles.length > 0 ? `. ${failedFiles.length} failed.` : ""
+          }`,
         })
         setProjectFiles([])
 
@@ -299,13 +359,14 @@ export default function ProjectsPage() {
         // Update selected project with fresh data
         if (selectedProject) {
           console.log("Looking for updated project data for ID:", selectedProject.id)
-          const updatedProject = projects.find((p) => p.id === selectedProject.id)
-          if (updatedProject) {
-            console.log("Found updated project:", updatedProject)
-            console.log("Updated project file count:", updatedProject.file_count)
-            setSelectedProject(updatedProject)
-          } else {
-            console.log("Could not find updated project in projects list")
+          const updatedProjects = await fetch("/api/projects").then(r => r.json())
+          if (updatedProjects.success) {
+            const updatedProject = updatedProjects.projects.find((p: Project) => p.id === selectedProject.id)
+            if (updatedProject) {
+              console.log("Found updated project:", updatedProject)
+              console.log("Updated project file count:", updatedProject.file_count)
+              setSelectedProject(updatedProject)
+            }
           }
         }
       } else {
@@ -466,13 +527,6 @@ export default function ProjectsPage() {
     const diffInDays = Math.floor(diffInHours / 24)
     return `${diffInDays} days ago`
   }
-
-  const [projectName, setProjectName] = useState("")
-  const [description, setDescription] = useState("")
-  const [category, setCategory] = useState("")
-  const [studyGoal, setStudyGoal] = useState("")
-  const [targetDate, setTargetDate] = useState<Date | undefined>(undefined)
-  const [estimatedHours, setEstimatedHours] = useState("")
 
   useEffect(() => {
     if (status === "authenticated") {
@@ -661,7 +715,7 @@ export default function ProjectsPage() {
                     </div>
                   </div>
 
-                  <div className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors`}>
+                  <div className="border-2 border-dashed rounded-lg p-8 text-center transition-colors">
                     <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">Drop your files here</h3>
                     <p className="text-gray-600 dark:text-gray-300 mb-4">
@@ -674,6 +728,7 @@ export default function ProjectsPage() {
                       onChange={(e) => {
                         if (e.target.files) {
                           handleFileUpload(e.target.files)
+                          e.target.value = '' // Reset input to allow re-selecting files
                         }
                       }}
                       className="hidden"
@@ -795,9 +850,11 @@ export default function ProjectsPage() {
       {selectedProject && (
         <Dialog
           open={!!selectedProject}
-          onOpenChange={() => {
-            setSelectedProject(null)
-            setFiles([])
+          onOpenChange={(open) => {
+            if (!open) {
+              setSelectedProject(null)
+              setProjectFiles([])
+            }
           }}
         >
           <DialogContent className="sm:max-w-[800px] max-h-[90vh] overflow-y-auto">
@@ -862,6 +919,7 @@ export default function ProjectsPage() {
                           if (e.target.files) {
                             console.log("Files selected:", e.target.files.length)
                             handleProjectFileUpload(e.target.files)
+                            e.target.value = '' // Reset input to allow re-selecting files
                           } else {
                             console.log("No files selected")
                           }

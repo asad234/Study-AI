@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { signOut } from "next-auth/react"
+import { useRouter } from "next/navigation"
 import {
   Sidebar,
   SidebarContent,
@@ -17,6 +18,7 @@ import {
 } from "@/components/ui/sidebar"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { useToast } from "@/hooks/use-toast"
 import {
   LayoutDashboard,
   CloudUpload,
@@ -37,6 +39,8 @@ import {
   BookOpen,
   FileQuestion,
   Brain,
+  Loader2,
+  Crown,
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -72,16 +76,6 @@ const navigationItems = [
 ]
 
 const studyTools = [
-
-  //"from-teal-400 to-cyan-500"
-  //{
-    //title: "Flashcards",
-    //url: "/dashboard/flash-cards/cards",
-    //icon: Zap,
-    //"from-teal-500 to-cyan-600"
-    //gradient: "from-orange-500 to-red-500",
-    //lightGradient: "from-orange-400 to-red-400",
-  //},
   {
     title: "Flashcards",
     url: "/dashboard/flash-cards",
@@ -96,13 +90,6 @@ const studyTools = [
     gradient: "from-purple-500 to-indigo-600",
     lightGradient: "from-purple-400 to-indigo-500",
   },
-  //{
-    //title: "Quiz Generator",
-    //url: "/dashboard/quiz/quiz-generator",
-    //icon: FileQuestion,
-    //gradient: "from-pink-500 to-rose-600",
-    //lightGradient: "from-pink-400 to-rose-500",
-  //},
   {
     title: "AI Chat",
     url: "/dashboard/chat",
@@ -120,13 +107,6 @@ const studyTools = [
 ]
 
 const accountItems = [
-  {
-    title: "Payment Plan",
-    url: "/dashboard/payment",
-    icon: CreditCard,
-    gradient: "from-green-500 to-emerald-600",
-    lightGradient: "from-green-400 to-emerald-500",
-  },
   {
     title: "Settings",
     icon: Settings,
@@ -167,9 +147,12 @@ const accountItems = [
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const router = useRouter()
+  const { toast } = useToast()
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null)
   const [loading, setLoading] = useState(true)
   const [settingsExpanded, setSettingsExpanded] = useState(false)
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false)
 
   useEffect(() => {
     const fetchUserProfile = async () => {
@@ -179,8 +162,6 @@ export function AppSidebar() {
         if (response.ok) {
           const profile = await response.json()
           setUserProfile(profile)
-        } else {
-          const errorText = await response.text()
         }
       } catch (error) {
         console.error("Failed to fetch user profile:", error)
@@ -196,6 +177,45 @@ export function AppSidebar() {
     await signOut({ callbackUrl: "/auth/signin" })
   }
 
+  const handleSubscriptionClick = async () => {
+    setSubscriptionLoading(true)
+    
+    try {
+      const response = await fetch("/api/check-subscription")
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to check subscription")
+      }
+
+      if (data.hasActiveSubscription && data.isPro) {
+        toast({
+          title: "Active Subscription",
+          description: "Redirecting to billing management...",
+        })
+      } else {
+        toast({
+          title: "Upgrade Available",
+          description: "Redirecting to payment options...",
+        })
+      }
+
+      setTimeout(() => {
+        router.push(data.redirectTo)
+      }, 500)
+
+    } catch (error: any) {
+      console.error("Subscription check error:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to check subscription status",
+        variant: "destructive",
+      })
+    } finally {
+      setSubscriptionLoading(false)
+    }
+  }
+
   const getUserInitials = () => {
     if (!userProfile) return "JD"
     const firstInitial = userProfile.firstName?.charAt(0) || "J"
@@ -204,11 +224,8 @@ export function AppSidebar() {
   }
 
   const getUserDisplayName = () => {
-    if (!userProfile) {
-      return "John Doe"
-    }
-    const displayName = `${userProfile.firstName || "John"} ${userProfile.lastName || "Doe"}`
-    return displayName
+    if (!userProfile) return "John Doe"
+    return `${userProfile.firstName || "John"} ${userProfile.lastName || "Doe"}`
   }
 
   return (
@@ -331,6 +348,34 @@ export function AppSidebar() {
           </SidebarGroupLabel>
           <SidebarGroupContent className="space-y-1">
             <SidebarMenu>
+              {/* Smart Subscription Button */}
+              <SidebarMenuItem>
+                <SidebarMenuButton 
+                  onClick={handleSubscriptionClick}
+                  disabled={subscriptionLoading}
+                  className={`
+                    group relative mx-2 rounded-xl transition-all duration-200 ease-out cursor-pointer
+                    hover:bg-gradient-to-r hover:from-green-50 hover:to-emerald-50 dark:hover:from-green-600/20 dark:hover:to-emerald-600/20
+                    hover:border hover:border-green-300/50 dark:hover:border-green-500/30 hover:shadow-lg
+                    ${subscriptionLoading ? 'opacity-50 cursor-not-allowed' : ''}
+                  `}
+                >
+                  <div className="flex items-center gap-3 p-3 w-full">
+                    <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 dark:from-green-400 dark:to-emerald-500 flex items-center justify-center shadow-sm group-hover:shadow-md transition-all duration-200">
+                      {subscriptionLoading ? (
+                        <Loader2 className="w-4 h-4 text-white animate-spin" />
+                      ) : (
+                        <Crown className="w-4 h-4 text-white" />
+                      )}
+                    </div>
+                    <span className="font-medium text-sm text-gray-700 dark:text-slate-300 group-hover:text-gray-900 dark:group-hover:text-white">
+                      {subscriptionLoading ? "Checking..." : "Subscription"}
+                    </span>
+                  </div>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+
+              {/* Other Account Items */}
               {accountItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   {item.isDropdown ? (

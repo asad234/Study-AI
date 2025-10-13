@@ -1,12 +1,11 @@
-import PaymentPage from '@/components/Dashboard/Account/Payment/payments'
-import React from 'react'
+"use client"
+import PaymentPage from "@/components/Dashboard/Account/Payment/payments"
+import SubscriptionPageWrapper from "@/components/Dashboard/Account/Payment/subscriptionRouter"
 
-function page() {
+export default function PaymentPageRoute() {
   return (
-    <div>
-      <PaymentPage/>
-    </div>
+    <SubscriptionPageWrapper requiredStatus="payment">
+      <PaymentPage />
+    </SubscriptionPageWrapper>
   )
 }
-
-export default page
