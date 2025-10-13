@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Switch } from "@/components/ui/switch"
-import { Check, Crown, Zap, Star, Users, FileText, Brain, MessageSquare, Upload, BarChart3 } from "lucide-react"
+import { Check, Zap, Star, Users, FileText, Brain, MessageSquare, Upload, BarChart3 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 interface PlanFeature {
@@ -23,11 +23,19 @@ interface Plan {
   features: PlanFeature[]
   popular?: boolean
   icon: React.ReactNode
+  stripePriceId?: {
+    monthly: string
+    yearly: string
+  }
+}
+
+interface PaymentPageProps {
+  user?: any // Add user prop - replace 'any' with proper User type if you have one
 }
 
 const plans: Plan[] = [
   {
-    name: "Free",
+    name: "Free Trial",
     price: 0,
     yearlyPrice: 0,
     description: "Perfect for getting started with AI-powered studying",
@@ -42,35 +50,20 @@ const plans: Plan[] = [
       { name: "Unlimited document uploads", included: false },
       { name: "Priority AI processing", included: false },
       { name: "Custom study schedules", included: false },
-      { name: "Exam simulation mode", included: false },
+      { name: "Advanced exam simulation", included: false },
     ],
   },
   {
     name: "Pro",
-    price: 9.99,
-    yearlyPrice: 99.99,
-    description: "Enhanced features for serious students",
+    price: 6.99,
+    yearlyPrice: 59.99,
+    description: "Everything you need for academic excellence",
     icon: <Zap className="w-6 h-6" />,
     popular: true,
-    features: [
-      { name: "Upload up to 50 documents", included: true },
-      { name: "Generate unlimited flashcards", included: true },
-      { name: "Unlimited quizzes", included: true },
-      { name: "Advanced AI chat with context", included: true },
-      { name: "Study progress tracking", included: true },
-      { name: "Advanced analytics", included: true },
-      { name: "Priority AI processing", included: true },
-      { name: "Custom study schedules", included: true },
-      { name: "Basic exam simulation", included: true },
-      { name: "Premium support", included: false },
-    ],
-  },
-  {
-    name: "Premium",
-    price: 19.99,
-    yearlyPrice: 199.99,
-    description: "Everything you need for academic excellence",
-    icon: <Crown className="w-6 h-6" />,
+    stripePriceId: {
+      monthly: "price_1SHVr44CFeSrwWdwl1AjJYub", // TODO: Replace with your actual Stripe monthly price ID
+      yearly: "price_1SHVvl4CFeSrwWdwoq5TeWlp",  // TODO: Replace with your actual Stripe yearly price ID
+    },
     features: [
       { name: "Unlimited document uploads", included: true },
       { name: "Generate unlimited flashcards", included: true },
@@ -86,16 +79,79 @@ const plans: Plan[] = [
   },
 ]
 
-export default function PaymentPage() {
+export default function PaymentPage({ user }: PaymentPageProps) {
   const [isYearly, setIsYearly] = useState(false)
-  const [currentPlan] = useState("Free")
+  const [loading, setLoading] = useState(false)
   const { toast } = useToast()
+  
+  // Get current plan from user data
+  const currentPlan = user?.plan === "pro" ? "Pro" : "Free Trial"
 
-  const handleSubscribe = (planName: string) => {
-    toast({
-      title: "Subscription initiated",
-      description: `Redirecting to payment for ${planName} plan...`,
-    })
+  const handleSubscribe = async (planName: string, stripePriceId?: string) => {
+    if (planName === "Free Trial") {
+      toast({
+        title: "Already on Free Trial",
+        description: "You're currently using the Free Trial plan.",
+      })
+      return
+    }
+
+    setLoading(true)
+    try {
+      // Get user ID from your NextAuth session
+      const sessionRes = await fetch('/api/auth/session')
+      const sessionData = await sessionRes.json()
+      
+      console.log("📋 Full session data:", sessionData)
+      
+      // Try different possible locations for user ID
+      const userId = sessionData?.id || sessionData?.user?.id || sessionData?.userId
+      
+      console.log("🚀 Extracted userId:", userId)
+
+      if (!userId) {
+        console.error("❌ No userId found in session:", sessionData)
+        toast({
+          title: "Error",
+          description: "Please log in to subscribe. Session data: " + JSON.stringify(sessionData),
+          variant: "destructive",
+        })
+        setLoading(false)
+        return
+      }
+
+      const response = await fetch("/api/create-checkout-session", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          priceId: stripePriceId,
+          planName: planName,
+          billingPeriod: isYearly ? "yearly" : "monthly",
+          userId: userId, // Pass the correct user ID
+        }),
+      })
+
+      const data = await response.json()
+      
+      console.log("📨 Checkout response:", data)
+
+      if (data.url) {
+        window.location.href = data.url
+      } else {
+        throw new Error(data.error || "Failed to create checkout session")
+      }
+    } catch (error: any) {
+      console.error("❌ Checkout error:", error)
+      toast({
+        title: "Error",
+        description: error.message || "Failed to initiate payment. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
   }
 
   const calculateSavings = (monthlyPrice: number, yearlyPrice: number) => {
@@ -123,11 +179,12 @@ export default function PaymentPage() {
       </div>
 
       {/* Pricing Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-4xl mx-auto">
         {plans.map((plan) => {
           const savings = calculateSavings(plan.price, plan.yearlyPrice)
           const displayPrice = isYearly ? plan.yearlyPrice : plan.price
           const isCurrentPlan = plan.name === currentPlan
+          const priceId = plan.stripePriceId ? (isYearly ? plan.stripePriceId.yearly : plan.stripePriceId.monthly) : undefined
 
           return (
             <Card
@@ -193,10 +250,10 @@ export default function PaymentPage() {
                 <Button
                   className="w-full"
                   variant={plan.popular ? "default" : "outline"}
-                  disabled={isCurrentPlan}
-                  onClick={() => handleSubscribe(plan.name)}
+                  disabled={isCurrentPlan || loading}
+                  onClick={() => handleSubscribe(plan.name, priceId)}
                 >
-                  {isCurrentPlan ? "Current Plan" : `Choose ${plan.name}`}
+                  {loading ? "Processing..." : isCurrentPlan ? "Current Plan" : `Choose ${plan.name}`}
                 </Button>
               </CardContent>
             </Card>
@@ -219,9 +276,8 @@ export default function PaymentPage() {
               <thead>
                 <tr className="border-b">
                   <th className="text-left py-3 px-4">Features</th>
-                  <th className="text-center py-3 px-4">Free</th>
+                  <th className="text-center py-3 px-4">Free Trial</th>
                   <th className="text-center py-3 px-4">Pro</th>
-                  <th className="text-center py-3 px-4">Premium</th>
                 </tr>
               </thead>
               <tbody>
@@ -231,7 +287,6 @@ export default function PaymentPage() {
                     Document Uploads
                   </td>
                   <td className="text-center py-3 px-4">5 docs</td>
-                  <td className="text-center py-3 px-4">50 docs</td>
                   <td className="text-center py-3 px-4">Unlimited</td>
                 </tr>
                 <tr className="border-b">
@@ -241,7 +296,6 @@ export default function PaymentPage() {
                   </td>
                   <td className="text-center py-3 px-4">50/month</td>
                   <td className="text-center py-3 px-4">Unlimited</td>
-                  <td className="text-center py-3 px-4">Unlimited</td>
                 </tr>
                 <tr className="border-b">
                   <td className="py-3 px-4 flex items-center gap-2">
@@ -249,7 +303,6 @@ export default function PaymentPage() {
                     AI Processing
                   </td>
                   <td className="text-center py-3 px-4">Standard</td>
-                  <td className="text-center py-3 px-4">Priority</td>
                   <td className="text-center py-3 px-4">Priority</td>
                 </tr>
                 <tr className="border-b">
@@ -259,7 +312,6 @@ export default function PaymentPage() {
                   </td>
                   <td className="text-center py-3 px-4">Basic</td>
                   <td className="text-center py-3 px-4">Advanced</td>
-                  <td className="text-center py-3 px-4">Advanced</td>
                 </tr>
                 <tr>
                   <td className="py-3 px-4 flex items-center gap-2">
@@ -267,7 +319,6 @@ export default function PaymentPage() {
                     Support
                   </td>
                   <td className="text-center py-3 px-4">Community</td>
-                  <td className="text-center py-3 px-4">Email</td>
                   <td className="text-center py-3 px-4">24/7 Premium</td>
                 </tr>
               </tbody>
@@ -285,24 +336,29 @@ export default function PaymentPage() {
           <div>
             <h4 className="font-semibold mb-2">Can I change my plan anytime?</h4>
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              Yes, you can upgrade or downgrade your plan at any time. Changes will be reflected in your next billing
-              cycle.
+              Yes, you can upgrade from Free Trial to Pro at any time. Changes will be reflected immediately.
             </p>
           </div>
           <div>
             <h4 className="font-semibold mb-2">What payment methods do you accept?</h4>
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              We accept all major credit cards, PayPal, and bank transfers for annual plans.
+              We accept all major credit cards through Stripe's secure payment processing.
             </p>
           </div>
           <div>
             <h4 className="font-semibold mb-2">Is there a free trial?</h4>
             <p className="text-sm text-gray-600 dark:text-gray-300">
-              Our Free plan gives you access to core features. You can upgrade anytime to unlock advanced features.
+              Yes! Our Free Trial plan gives you access to core features with no credit card required.
+            </p>
+          </div>
+          <div>
+            <h4 className="font-semibold mb-2">Can I cancel my subscription?</h4>
+            <p className="text-sm text-gray-600 dark:text-gray-300">
+              Yes, you can cancel your Pro subscription at any time. You'll continue to have access until the end of your billing period.
             </p>
           </div>
         </CardContent>
       </Card>
     </div>
   )
-}
+}   

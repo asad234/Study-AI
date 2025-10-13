@@ -163,15 +163,14 @@ export async function POST(request: NextRequest) {
               file_path: ("url" in mediaResult ? mediaResult.url : "") || "",
               file_type: file.type,
               file_size: file.size,
-              status: "pending", // Changed from "ready" to "pending" - will be "ready" after extraction
-              processing_progress: 0, // Changed from 100 to 0
+              status: "pending",
+              processing_progress: 0,
               metadata: {
                 originalName: file.name,
                 uploadedAt: new Date().toISOString(),
                 uploadedBy: session.user.email,
               },
               media_file: mediaResult.id,
-              // notes will be added by the extraction API
             },
           })
           break // Success, exit retry loop
@@ -190,9 +189,6 @@ export async function POST(request: NextRequest) {
           throw retryError // Re-throw if not a connection error or max retries reached
         }
       }
-
-      {/*export const runtime = 'nodejs';
-export const maxDuration = 60; */}
 
       if (!documentResult) {
         throw new Error("Document creation returned null/undefined result")
@@ -226,7 +222,7 @@ export const maxDuration = 60; */}
       return NextResponse.json({ error: "Failed to create document record" }, { status: 500 })
     }
 
-    // ✅ NEW: Trigger text extraction in the background
+    // ✅ Trigger text extraction in the background
     console.log("Upload - Triggering text extraction for document:", documentResult.id)
     triggerTextExtraction(documentResult.id).catch((error) => {
       console.error("Upload - Background extraction trigger failed:", error)
@@ -245,7 +241,7 @@ export const maxDuration = 60; */}
   }
 }
 
-// ✅ NEW: Helper function to trigger text extraction
+// ✅ Helper function to trigger text extraction
 async function triggerTextExtraction(documentId: string | number) {
   try {
     const extractUrl = `${process.env.NEXT_PUBLIC_SERVER_URL}/api/documents/${documentId}/extract`
