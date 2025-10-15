@@ -4,7 +4,7 @@ export const ExamQuestionSchema = z.object({
   id: z.string(),
   type: z.enum(["multiple-choice", "true-false", "written", "multiple-select"]),
   question: z.string(),
-  options: z.array(z.string()).optional(), // For multiple-choice and multiple-select
+  options: z.array(z.string()).optional().nullable(), // For multiple-choice and multiple-select
   correctAnswer: z.union([
     z.number(), // For multiple-choice and true-false (0 or 1)
     z.array(z.number()), // For multiple-select
@@ -25,12 +25,19 @@ export const ExamSchema = z.object({
   total_marks: z.number(), // Changed from totalPoints
   visibility: z.enum(["public", "private"]).default("private"),
   questions: z.array(ExamQuestionSchema),
-  passingScore: z.number(), // percentage
-  settings: z.object({
-    shuffleQuestions: z.boolean().default(false),
-    shuffleOptions: z.boolean().default(false),
-    showExplanations: z.boolean().default(true),
-  }),
+  passingScore: z.number().optional().default(60), // percentage - made optional with default
+  settings: z
+    .object({
+      shuffleQuestions: z.boolean().default(false),
+      shuffleOptions: z.boolean().default(false),
+      showExplanations: z.boolean().default(true),
+    })
+    .optional()
+    .default({
+      shuffleQuestions: false,
+      shuffleOptions: false,
+      showExplanations: true,
+    }),
 })
 
 export const ExamGenerationSchema = z.object({
@@ -42,10 +49,16 @@ export const ExamGenerationSchema = z.object({
   questionTypes: z.array(z.enum(["multiple-choice", "true-false", "written", "multiple-select"])),
 })
 
+// ✅ FIXED: Allow null for unanswered questions
 export const ExamAttemptAnswerSchema = z.object({
   questionId: z.string(),
-  answer: z.union([z.number(), z.array(z.number()), z.string()]),
-  timeSpent: z.number(), // in seconds
+  answer: z.union([
+    z.number(), 
+    z.array(z.number()), 
+    z.string(), 
+    z.null() // ← ADDED: Allow null for unanswered questions
+  ]),
+  timeSpent: z.number(),
 })
 
 export const ExamAttemptSchema = z.object({
