@@ -13,6 +13,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { toast } from "@/hooks/use-toast"
 import { Clock, BookOpen, ChevronDown, Loader2, CheckCircle, XCircle, Award, ChevronLeft, ChevronRight, AlertCircle } from "lucide-react"
 import type { ExamQuestion } from "@/lib/exam-schema"
+import { ExamGenerationDialog } from "./ExamGenerationDialog"
 
 interface Project {
   id: string
@@ -199,6 +200,10 @@ export default function ExamSimulatorPage() {
   const [showResults, setShowResults] = useState(false)
   const [showReviewMode, setShowReviewMode] = useState(false)
 
+  const [showGenerationDialog, setShowGenerationDialog] = useState(false)
+  const [generationStage, setGenerationStage] = useState<"extracting" | "generating" | "complete">("extracting")
+
+
   const difficulties = ["easy", "medium", "hard"]
   const questionTypes = [
     { value: "multiple-choice", label: "Multiple Choice" },
@@ -263,91 +268,203 @@ export default function ExamSimulatorPage() {
     fetchDocuments()
   }, [selectedProjects])
 
-  const generateExam = async () => {
-    if (selectedDocuments.length === 0) {
-      toast({
-        title: "No documents selected",
-        description: "Please select at least one document to generate an exam.",
-        variant: "destructive",
-      })
-      return
-    }
+  // Add this useEffect for the timer countdown
+// Place this after your other useEffect hooks
 
-    if (selectedQuestionTypes.length === 0) {
-      toast({
-        title: "No question types selected",
-        description: "Please select at least one question type.",
-        variant: "destructive",
-      })
-      return
-    }
+useEffect(() => {
+  // Only run timer when exam is active
+  if (!examStarted || examFinished || showResults) {
+    return
+  }
 
-    const minQuestions = selectedQuestionTypes.length
-    if (Number.parseInt(questionCount) < minQuestions) {
-      toast({
-        title: "Not enough questions",
-        description: `You need at least ${minQuestions} questions for ${selectedQuestionTypes.length} question types. Please increase the question count.`,
-        variant: "destructive",
-      })
-      return
-    }
-
-    setIsGenerating(true)
-
-    try {
-      const requestBody = {
-        documentIds: selectedDocuments.map(String),
-        projectIds: selectedProjects.map(String),
-        questionCount: Number.parseInt(questionCount),
-        difficulties: selectedDifficulties,
-        duration: Number.parseInt(duration) * 60,
-        questionTypes: selectedQuestionTypes,
+  const timer = setInterval(() => {
+    setTimeLeft((prevTime) => {
+      // Time's up!
+      if (prevTime <= 1) {
+        clearInterval(timer)
+        handleFinishExam()
+        toast({
+          title: "Time's Up! ⏰",
+          description: "Your exam has been automatically submitted.",
+          variant: "destructive",
+        })
+        return 0
       }
 
-      console.log('🚀 Sending exam generation request:', requestBody)
+      const newTime = prevTime - 1
+      const totalDuration = parseInt(duration) * 60
+      const timeRemaining = newTime
+      const percentageLeft = (timeRemaining / totalDuration) * 100
 
-      const response = await fetch("/api/exams", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      })
-
-      const data = await response.json()
-
-      if (data.success && data.exam) {
-        setExamQuestions(data.exam.questions)
-        setExamId(String(data.exam.id))
-        setTimeLeft(data.exam.duration)
-        setShowExam(true)
-        setExamStarted(true)
-        
-        const typeDistribution = data.metadata?.questionTypeDistribution || {}
-        const distributionText = Object.entries(typeDistribution)
-          .map(([type, count]) => `${type}: ${count}`)
-          .join(', ')
-        
+      // Warning at 20% time remaining (only show once)
+      if (percentageLeft <= 20 && percentageLeft > 19.5 && prevTime > newTime) {
+        const minutesLeft = Math.floor(timeRemaining / 60)
         toast({
-          title: "Exam generated successfully",
-          description: `Your exam with ${data.exam.questions.length} questions is ready! (${distributionText})`,
+          title: "⚠️ Time Warning",
+          description: `Only ${minutesLeft} minute${minutesLeft !== 1 ? 's' : ''} remaining! Please review your answers.`,
+          variant: "default",
         })
-      } else {
+      }
+
+      // Critical warning at 5% time remaining (only show once)
+      if (percentageLeft <= 5 && percentageLeft > 4.5 && prevTime > newTime) {
+        const minutesLeft = Math.floor(timeRemaining / 60)
+        const secondsLeft = timeRemaining % 60
         toast({
-          title: "Generation failed",
-          description: data.error || "Could not generate exam questions",
+          title: "🚨 Critical Time Warning",
+          description: `Only ${minutesLeft}:${secondsLeft.toString().padStart(2, '0')} remaining!`,
           variant: "destructive",
         })
       }
-    } catch (error) {
-      console.error("Exam generation error:", error)
+
+      return newTime
+    })
+  }, 1000)
+
+  return () => clearInterval(timer)
+}, [examStarted, examFinished, showResults, duration])
+
+
+  const generateExam = async () => {
+  if (selectedDocuments.length === 0) {
+    toast({
+      title: "No documents selected",
+      description: "Please select at least one document to generate an exam.",
+      variant: "destructive",
+    })
+    return
+  }
+
+  if (selectedQuestionTypes.length === 0) {
+    toast({
+      title: "No question types selected",
+      description: "Please select at least one question type.",
+      variant: "destructive",
+    })
+    return
+  }
+
+  const minQuestions = selectedQuestionTypes.length
+  if (Number.parseInt(questionCount) < minQuestions) {
+    toast({
+      title: "Not enough questions",
+      description: `You need at least ${minQuestions} questions for ${selectedQuestionTypes.length} question types. Please increase the question count.`,
+      variant: "destructive",
+    })
+    return
+  }
+
+  setIsGenerating(true)
+  setShowGenerationDialog(true)
+  setGenerationStage("extracting")
+
+  try {
+    console.log("🚀 Starting exam generation for documents:", selectedDocuments)
+
+    // STEP 1: Extract text from selected documents first
+    console.log("📝 Step 1: Ensuring documents have extracted text...")
+    
+    const extractResponse = await fetch("/api/documents/extract-selected", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ documentIds: selectedDocuments }),
+    })
+
+    const extractData = await extractResponse.json()
+    console.log("📝 Extraction result:", extractData)
+
+    if (extractData.success) {
+      if (extractData.results.triggered > 0) {
+        console.log(`⏳ Waiting for ${extractData.results.triggered} document(s) to be extracted...`)
+        
+        // Wait for extraction to complete (5 seconds)
+        await new Promise(resolve => setTimeout(resolve, 5000))
+      }
+
+      if (extractData.results.alreadyExtracted > 0) {
+        console.log(`✅ ${extractData.results.alreadyExtracted} document(s) already have content`)
+      }
+
+      if (extractData.results.failed.length > 0) {
+        console.warn("⚠️ Some documents failed extraction:", extractData.results.failed)
+      }
+    }
+
+    // STEP 2: Generate exam
+    console.log("📋 Step 2: Generating exam...")
+    setGenerationStage("generating")
+
+    const requestBody = {
+      documentIds: selectedDocuments.map(String),
+      projectIds: selectedProjects.map(String),
+      questionCount: Number.parseInt(questionCount),
+      difficulties: selectedDifficulties,
+      duration: Number.parseInt(duration) * 60,
+      questionTypes: selectedQuestionTypes,
+    }
+
+    console.log('🚀 Sending exam generation request:', requestBody)
+
+    const response = await fetch("/api/exams", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    })
+
+    const data = await response.json()
+
+    // Close the dialog before showing results
+    setShowGenerationDialog(false)
+    setGenerationStage("complete")
+
+    if (data.success && data.exam) {
+      setExamQuestions(data.exam.questions)
+      setExamId(String(data.exam.id))
+      setTimeLeft(data.exam.duration)
+      setShowExam(true)
+      setExamStarted(true)
+      
+      const typeDistribution = data.metadata?.questionTypeDistribution || {}
+      const distributionText = Object.entries(typeDistribution)
+        .map(([type, count]) => `${type}: ${count}`)
+        .join(', ')
+      
       toast({
-        title: "Error",
-        description: "Failed to generate exam. Please try again.",
+        title: "Exam Generated! 🎉",
+        description: `Your exam with ${data.exam.questions.length} questions is ready from ${selectedDocuments.length} document(s)! (${distributionText})`,
+      })
+
+      // Show warning if some documents failed
+      if (data.metadata?.failedDocuments > 0) {
+        setTimeout(() => {
+          toast({
+            title: "Partial Success",
+            description: `${data.metadata.failedDocuments} document(s) could not be processed.`,
+            variant: "default",
+          })
+        }, 1000)
+      }
+    } else {
+      console.error("Generation failed:", data)
+      toast({
+        title: "Generation failed",
+        description: data.error || "Could not generate exam questions",
         variant: "destructive",
       })
-    } finally {
-      setIsGenerating(false)
     }
+  } catch (error) {
+    console.error("❌ Exam generation error:", error)
+    setShowGenerationDialog(false)
+    
+    toast({
+      title: "Error",
+      description: "Failed to generate exam. Please try again.",
+      variant: "destructive",
+    })
+  } finally {
+    setIsGenerating(false)
   }
+}
 
   const calculateResults = () => {
     let correctCount = 0
@@ -968,6 +1085,11 @@ export default function ExamSimulatorPage() {
     )
   }
 
+  const totalDuration = parseInt(duration) * 60
+  const percentageLeft = (timeLeft / totalDuration) * 100
+  const isWarning = percentageLeft <= 20
+  const isCritical = percentageLeft <= 5
+
   // Exam Taking Screen
   if (showExam && examQuestions.length > 0) {
     const question = examQuestions[currentQuestion]
@@ -978,18 +1100,20 @@ export default function ExamSimulatorPage() {
         <div className="max-w-4xl mx-auto">
           <Card className="mb-6">
             <CardContent className="p-4">
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-4">
-                  <Badge variant="outline">Question {currentQuestion + 1} of {examQuestions.length}</Badge>
-                  <Badge variant="secondary">{question.category}</Badge>
-                  <Badge>{question.difficulty}</Badge>
-                  <Badge variant="outline" className="capitalize">{question.type.replace("-", " ")}</Badge>
-                </div>
-                <div className="flex items-center space-x-2 text-lg font-mono">
-                  <Clock className="w-5 h-5" />
-                  <span>{Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, "0")}</span>
-                </div>
-              </div>
+                    <div className={`flex items-center space-x-2 text-lg font-mono ${
+          isCritical 
+            ? 'text-red-600 dark:text-red-400 animate-pulse' 
+            : isWarning 
+            ? 'text-orange-600 dark:text-orange-400' 
+            : 'text-gray-900 dark:text-gray-100'
+        }`}>
+          <Clock className={`w-5 h-5 ${
+            isCritical ? 'animate-bounce' : isWarning ? 'animate-pulse' : ''
+          }`} />
+          <span className="font-bold">
+            {Math.floor(timeLeft / 60)}:{(timeLeft % 60).toString().padStart(2, "0")}
+          </span>
+        </div>
               <Progress value={progress} />
             </CardContent>
           </Card>
@@ -1271,6 +1395,15 @@ export default function ExamSimulatorPage() {
           </div>
         </CardContent>
       </Card>
+      
+      {/* The Exam Generation Dialog at the end */}
+      <ExamGenerationDialog
+        open={showGenerationDialog}
+        documentCount={selectedDocuments.length}
+        questionCount={parseInt(questionCount)}
+        duration={parseInt(duration)}
+        stage={generationStage}
+      />
     </div>
   )
 }

@@ -13,6 +13,7 @@ import UnderDevelopmentBanner from "@/components/common/underDevelopment"
 import PreviewQuizzes from "./Preview/previewQuizes"
 import ManualQuizCreator from "./Manual/ManualQuizeCreator"
 import QuizStudy from "./quize-study"
+import { QuizGenerationDialog } from "./QuizGenerationDialog"
 interface Project {
   id: string
   name: string
@@ -52,6 +53,10 @@ export default function QuizProjectsPage() {
   const [generatedQuestions, setGeneratedQuestions] = useState<Question[]>([])
   const [showQuiz, setShowQuiz] = useState(false)
   const [quizId, setQuizId] = useState<string>("")
+
+  const [showGenerationDialog, setShowGenerationDialog] = useState(false)
+  const [generationStage, setGenerationStage] = useState<"extracting" | "generating" | "complete">("extracting")
+
 
   useEffect(() => {
     fetchProjects()
@@ -164,75 +169,138 @@ export default function QuizProjectsPage() {
   }
 
   const generateQuiz = async () => {
-    if (selectedDocuments.length === 0 || selectedDifficulties.length === 0) {
-      toast({
-        title: "Missing selections",
-        description: "Please select documents and difficulty levels",
-        variant: "destructive",
-      })
-      return
+  if (selectedDocuments.length === 0 || selectedDifficulties.length === 0) {
+    toast({
+      title: "Missing selections",
+      description: "Please select documents and difficulty levels",
+      variant: "destructive",
+    })
+    return
+  }
+
+  setIsGeneratingQuiz(true)
+  setShowGenerationDialog(true)
+  setGenerationStage("extracting")
+
+  try {
+    console.log("🚀 Starting quiz generation for documents:", selectedDocuments)
+
+    // STEP 1: Extract text from selected documents first
+    console.log("📝 Step 1: Ensuring documents have extracted text...")
+    
+    const extractResponse = await fetch("/api/documents/extract-selected", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ documentIds: selectedDocuments }),
+    })
+
+    const extractData = await extractResponse.json()
+    console.log("📝 Extraction result:", extractData)
+
+    if (extractData.success) {
+      if (extractData.results.triggered > 0) {
+        console.log(`⏳ Waiting for ${extractData.results.triggered} document(s) to be extracted...`)
+        
+        // Wait for extraction to complete (5 seconds)
+        await new Promise(resolve => setTimeout(resolve, 5000))
+      }
+
+      if (extractData.results.alreadyExtracted > 0) {
+        console.log(`✅ ${extractData.results.alreadyExtracted} document(s) already have content`)
+      }
+
+      if (extractData.results.failed.length > 0) {
+        console.warn("⚠️ Some documents failed extraction:", extractData.results.failed)
+      }
     }
 
-    setIsGeneratingQuiz(true)
-    try {
-      console.log("Generating quiz with:", {
+    // STEP 2: Generate quiz questions
+    console.log("🎯 Step 2: Generating quiz questions...")
+    setGenerationStage("generating")
+
+    console.log("Generating quiz with:", {
+      documentIds: selectedDocuments,
+      difficulties: selectedDifficulties,
+      questionCount: parseInt(questionCount),
+    })
+
+    const response = await fetch("/api/quiz", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
         documentIds: selectedDocuments,
         difficulties: selectedDifficulties,
-        questionCount: Number.parseInt(questionCount),
-      })
+        questionCount: parseInt(questionCount),
+      }),
+    })
 
-      const response = await fetch("/api/quiz", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          documentIds: selectedDocuments,
-          difficulties: selectedDifficulties,
-          questionCount: Number.parseInt(questionCount),
-        }),
-      })
+    console.log("Quiz API response status:", response.status)
 
-      console.log("Quiz API response status:", response.status)
+    // Close the dialog before showing results
+    setShowGenerationDialog(false)
+    setGenerationStage("complete")
 
-      if (response.ok) {
-        const data = await response.json()
-        console.log("Quiz API response data:", data)
+    if (response.ok) {
+      const data = await response.json()
+      console.log("Quiz API response data:", data)
 
-        if (data.success && data.quiz?.questions) {
-          setGeneratedQuestions(data.quiz.questions)
-          setQuizId(String(data.quiz.id) || `quiz-${Date.now()}`)
-          setShowQuiz(true)
-          toast({
-            title: "Quiz generated!",
-            description: `${data.quiz.questions.length} questions ready`,
-          })
-        } else {
-          console.error("Invalid response structure:", data)
-          toast({
-            title: "Generation failed",
-            description: data.error || "Could not generate quiz questions",
-            variant: "destructive",
-          })
+      if (data.success && data.quiz?.questions) {
+        setGeneratedQuestions(data.quiz.questions)
+        setQuizId(String(data.quiz.id) || `quiz-${Date.now()}`)
+        setShowQuiz(true)
+        
+        toast({
+          title: "Quiz Generated! 🎉",
+          description: `${data.quiz.questions.length} questions ready from ${selectedDocuments.length} document(s)`,
+        })
+
+        // Show warning if some documents failed
+        if (data.metadata?.failedDocuments > 0) {
+          setTimeout(() => {
+            toast({
+              title: "Partial Success",
+              description: `${data.metadata.failedDocuments} document(s) could not be processed.`,
+              variant: "default",
+            })
+          }, 1000)
         }
       } else {
-        const errorData = await response.json().catch(() => ({}))
-        console.error("Quiz API error:", errorData)
+        console.error("Invalid response structure:", data)
         toast({
           title: "Generation failed",
-          description: errorData.error || "Server error occurred",
+          description: data.error || "Could not generate quiz questions",
           variant: "destructive",
         })
       }
-    } catch (error) {
-      console.error("Quiz generation error:", error)
+    } else {
+      const errorData = await response.json().catch(() => ({}))
+      console.error("Quiz API error:", errorData)
+      
+      let errorDescription = errorData.error || "Server error occurred"
+      
+      if (errorData.failedDocuments && errorData.failedDocuments.length > 0) {
+        errorDescription += `\n\nFailed documents: ${errorData.failedDocuments.join(", ")}`
+      }
+      
       toast({
-        title: "Error",
-        description: "Failed to generate quiz",
+        title: "Generation failed",
+        description: errorDescription,
         variant: "destructive",
       })
-    } finally {
-      setIsGeneratingQuiz(false)
     }
+  } catch (error) {
+    console.error("❌ Quiz generation error:", error)
+    setShowGenerationDialog(false)
+    
+    toast({
+      title: "Error",
+      description: "Failed to generate quiz. Please try again.",
+      variant: "destructive",
+    })
+  } finally {
+    setIsGeneratingQuiz(false)
   }
+}
 
   const handleBackToSelection = () => {
     setShowQuiz(false)
@@ -477,6 +545,13 @@ export default function QuizProjectsPage() {
             </div>
           </CardContent>
         </Card>
+         {/* The Quiz Generation Dialog */}
+          <QuizGenerationDialog
+            open={showGenerationDialog}
+            documentCount={selectedDocuments.length}
+            questionCount={parseInt(questionCount)}
+            stage={generationStage}
+          />
       </div>
   )
 }

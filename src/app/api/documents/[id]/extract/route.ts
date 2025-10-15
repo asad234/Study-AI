@@ -1,5 +1,5 @@
 // api/documents/[id]/extract/route.ts
-// This endpoint will extract text from uploaded documents
+// Updated to support PowerPoint presentations
 
 import { type NextRequest, NextResponse } from "next/server"
 import { getServerSession } from "next-auth"
@@ -8,6 +8,8 @@ import { getPayload } from "payload"
 import config from "@payload-config"
 import pdf from "pdf-parse"
 import mammoth from "mammoth"
+// Add this import for PowerPoint
+import PizZip from "pizzip"
 
 export async function POST(
   request: NextRequest,
@@ -21,10 +23,8 @@ export async function POST(
     let userEmail: string | undefined
     
     if (isInternalCall) {
-      // Internal call - skip session check
       console.log("Internal API call detected")
     } else {
-      // External call - require session
       const session = await getServerSession(authOptions)
       if (!session?.user?.email) {
         return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
@@ -43,7 +43,6 @@ export async function POST(
 
     // If not an internal call, verify ownership
     if (!isInternalCall && userEmail) {
-      // Get user profile to verify ownership
       const userProfiles = await payload.find({
         collection: "profiles",
         where: { email: { equals: userEmail } },
@@ -56,7 +55,6 @@ export async function POST(
 
       const userProfile = userProfiles.docs[0]
 
-      // Verify ownership
       const documentUserId =
         typeof document.user === "object" && document.user !== null
           ? document.user.id
@@ -142,6 +140,52 @@ export async function POST(
         extractedText = result.value
         console.log(`Extracted ${extractedText.length} characters from Word document`)
 
+      } else if (mimeType === "application/vnd.openxmlformats-officedocument.presentationml.presentation") {
+        // 🆕 PowerPoint extraction (.pptx)
+        console.log("Extracting text from PowerPoint presentation...")
+        try {
+          const zip = new PizZip(fileBuffer)
+          const slideTexts: string[] = []
+          
+          // PowerPoint slides are stored in ppt/slides/slide[N].xml files
+          let slideNumber = 1
+          while (true) {
+            try {
+              const slideXml = zip.file(`ppt/slides/slide${slideNumber}.xml`)
+              if (!slideXml) break
+              
+              const content = slideXml.asText()
+              
+              // Extract text from XML - look for <a:t> tags which contain text
+              const textMatches = content.match(/<a:t>([^<]+)<\/a:t>/g)
+              if (textMatches) {
+                const slideText = textMatches
+                  .map(match => match.replace(/<\/?a:t>/g, ''))
+                  .join(' ')
+                
+                if (slideText.trim()) {
+                  slideTexts.push(`\n--- Slide ${slideNumber} ---\n${slideText}`)
+                }
+              }
+              
+              slideNumber++
+            } catch (e) {
+              break // No more slides
+            }
+          }
+          
+          extractedText = slideTexts.join('\n\n')
+          console.log(`Extracted ${extractedText.length} characters from ${slideNumber - 1} slides`)
+          
+          if (extractedText.length < 50) {
+            console.warn("Very little text extracted from PowerPoint. Slides might be image-heavy.")
+            extractedText = `[PowerPoint presentation with ${slideNumber - 1} slides. Limited text content extracted. Document may contain mostly images or diagrams.]\n\n${extractedText}`
+          }
+        } catch (pptError) {
+          console.error("PowerPoint extraction error:", pptError)
+          extractedText = "[Failed to extract text from PowerPoint presentation. File may be corrupted or password-protected.]"
+        }
+
       } else if (mimeType.startsWith("text/")) {
         // Plain text files
         console.log("Reading plain text file...")
@@ -155,7 +199,7 @@ export async function POST(
 
       } else {
         console.log("Unsupported file type:", mimeType)
-        extractedText = `[Unsupported file type: ${mimeType}. Please upload PDF, Word, or text documents.]`
+        extractedText = `[Unsupported file type: ${mimeType}. Please upload PDF, Word, PowerPoint, or text documents.]`
       }
 
       // Update progress

@@ -55,11 +55,10 @@ export const maxDuration = 60
 // Helper function to detect document language
 async function detectLanguage(text: string): Promise<'sv' | 'en'> {
   try {
-    // Take a sample of the text (first 1000 characters should be enough)
     const sample = text.slice(0, 1000)
     
     const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // Using mini model for cost efficiency
+      model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
@@ -75,12 +74,9 @@ async function detectLanguage(text: string): Promise<'sv' | 'en'> {
     })
 
     const detectedLang = response.choices[0]?.message.content?.trim().toLowerCase()
-    
-    // Return 'sv' only if Swedish is detected, otherwise default to 'en'
     return detectedLang === 'sv' ? 'sv' : 'en'
   } catch (error) {
     console.error("Language detection error:", error)
-    // Default to English if detection fails
     return 'en'
   }
 }
@@ -153,6 +149,13 @@ export async function POST(request: NextRequest) {
 
     const { documentIds, subject } = await request.json()
 
+    console.log("📥 Received flashcard generation request:", {
+      documentIds,
+      documentCount: documentIds?.length,
+      subject
+    })
+
+    // Validate input
     if (!documentIds || !Array.isArray(documentIds) || documentIds.length === 0) {
       return NextResponse.json({ error: "At least one document ID is required" }, { status: 400 })
     }
@@ -177,50 +180,80 @@ export async function POST(request: NextRequest) {
 
     const allGeneratedFlashcards: any[] = []
     const processedDocuments: string[] = []
-    const failedDocuments: string[] = []
+    const failedDocuments: Array<{id: string, reason: string, details?: string}> = []
 
-    console.log(`Processing ${documentIds.length} documents for flashcard generation`)
+    console.log(`\n🚀 Processing ${documentIds.length} document(s) for flashcard generation`)
 
     for (const documentId of documentIds) {
+      console.log(`\n📄 === Processing document: ${documentId} ===`)
+      
       try {
-        console.log(`Processing document: ${documentId}`)
-
+        // Fetch document
         const document = await payload.findByID({
           collection: "documents",
           id: documentId,
         })
 
         if (!document) {
-          console.error(`Document ${documentId} not found`)
-          failedDocuments.push(documentId)
+          const error = `Document not found`
+          console.error(`❌ ${error}`)
+          failedDocuments.push({id: documentId, reason: error})
           continue
         }
 
+        console.log(`✓ Document found:`, {
+          id: document.id,
+          title: document.title || document.file_name,
+          status: document.status,
+          hasNotes: !!document.notes,
+          notesLength: document.notes?.length || 0
+        })
+
+        // Check ownership
         const documentUserId =
           typeof document.user === "object" && document.user !== null ? document.user.id : document.user
         if (documentUserId !== userProfile.id) {
-          console.error(`Document ${documentId} access denied`)
-          failedDocuments.push(documentId)
+          const error = `Access denied - document belongs to different user`
+          console.error(`❌ ${error}`)
+          failedDocuments.push({id: documentId, reason: error})
           continue
         }
 
+        // Check if document is ready
+        if (document.status !== "ready") {
+          const error = `Document not ready (status: ${document.status})`
+          console.error(`❌ ${error}`)
+          failedDocuments.push({
+            id: documentId, 
+            reason: error,
+            details: "Please wait for text extraction to complete"
+          })
+          continue
+        }
+
+        // Check content
         const documentContent = document.notes || ""
 
         if (!documentContent || documentContent.length < 50) {
-          console.error(`Document ${documentId} has no extracted content`)
-          failedDocuments.push(documentId)
+          const error = `Insufficient content (${documentContent.length} characters)`
+          console.error(`❌ ${error}`)
+          failedDocuments.push({
+            id: documentId, 
+            reason: error,
+            details: "Document needs at least 50 characters of extracted text"
+          })
           continue
         }
 
-        console.log(`Document content length: ${documentContent.length} characters`)
+        console.log(`✓ Document content: ${documentContent.length} characters`)
 
-        // 🆕 DETECT LANGUAGE
+        // Detect language
+        console.log(`🔍 Detecting language...`)
         const detectedLanguage = await detectLanguage(documentContent)
-        console.log(`Detected language for document ${documentId}: ${detectedLanguage}`)
-
-        // 🆕 GET LANGUAGE-SPECIFIC INSTRUCTIONS
-        const languageInstructions = getLanguageInstructions(detectedLanguage)
         const languageName = detectedLanguage === 'sv' ? 'Swedish' : 'English'
+        console.log(`✓ Language detected: ${languageName}`)
+
+        const languageInstructions = getLanguageInstructions(detectedLanguage)
 
         const documentContext = `Document Title: ${document.title || document.file_name || "Untitled"}
 Subject Area: ${subject || "General"}
@@ -231,8 +264,9 @@ ${documentContent}
 
 This is the actual content extracted from the student's study material. Use this content to generate relevant flashcards.`
 
-        console.log(`Generating flashcards in ${languageName} for document: ${document.title || document.file_name}`)
+        console.log(`🤖 Generating flashcards via OpenAI...`)
 
+        // Call OpenAI with better error handling
         const completion = await openai.chat.completions.create({
           model: "gpt-4o",
           messages: [
@@ -276,27 +310,46 @@ CRITICAL:
         const aiResponseContent = completion.choices[0]?.message.content
 
         if (!aiResponseContent) {
-          console.error(`No AI response for document ${documentId}`)
-          failedDocuments.push(documentId)
+          const error = `No AI response received`
+          console.error(`❌ ${error}`)
+          failedDocuments.push({id: documentId, reason: error})
           continue
         }
 
+        console.log(`✓ AI response received`)
+
+        // Parse response
         let aiResponse
         try {
           aiResponse = JSON.parse(aiResponseContent)
         } catch (parseError) {
-          console.error(`Failed to parse AI response for document ${documentId}`)
-          failedDocuments.push(documentId)
+          const error = `Failed to parse AI response`
+          console.error(`❌ ${error}:`, parseError)
+          failedDocuments.push({
+            id: documentId, 
+            reason: error,
+            details: parseError instanceof Error ? parseError.message : undefined
+          })
           continue
         }
 
+        // Validate response
         const parsed = FlashcardsCollectionSchema.safeParse(aiResponse)
         if (!parsed.success) {
-          console.error(`Validation failed for document ${documentId}:`, parsed.error.issues)
-          failedDocuments.push(documentId)
+          const error = `Validation failed`
+          console.error(`❌ ${error}:`, parsed.error.issues)
+          failedDocuments.push({
+            id: documentId, 
+            reason: error,
+            details: parsed.error.issues.map(i => i.message).join(", ")
+          })
           continue
         }
 
+        console.log(`✓ Generated ${parsed.data.flashcards.length} flashcards, saving to database...`)
+
+        // Save flashcards
+        let savedCount = 0
         for (const flashcard of parsed.data.flashcards) {
           try {
             const flashcardData = {
@@ -316,23 +369,43 @@ CRITICAL:
             })
 
             allGeneratedFlashcards.push(created)
+            savedCount++
           } catch (createError) {
-            console.error(`Error creating flashcard for document ${documentId}:`, createError)
+            console.error(`⚠️ Error saving individual flashcard:`, createError)
+            // Continue with other flashcards
           }
         }
 
         processedDocuments.push(documentId)
-        console.log(
-          `Successfully generated ${parsed.data.flashcards.length} flashcards in ${languageName} for document ${documentId}`,
-        )
+        console.log(`✅ Successfully processed document ${documentId}: ${savedCount}/${parsed.data.flashcards.length} flashcards saved`)
+
       } catch (docError) {
-        console.error(`Error processing document ${documentId}:`, docError)
-        failedDocuments.push(documentId)
+        const errorMessage = docError instanceof Error ? docError.message : "Unknown error"
+        console.error(`❌ Error processing document ${documentId}:`, docError)
+        failedDocuments.push({
+          id: documentId, 
+          reason: "Processing error",
+          details: errorMessage
+        })
       }
     }
 
     console.timeEnd(`flashcard-generation-${requestId}`)
 
+    // Summary log
+    console.log(`\n📊 Generation Summary:`)
+    console.log(`   ✅ Successful: ${processedDocuments.length} document(s)`)
+    console.log(`   ❌ Failed: ${failedDocuments.length} document(s)`)
+    console.log(`   🎴 Total flashcards: ${allGeneratedFlashcards.length}`)
+
+    if (failedDocuments.length > 0) {
+      console.log(`\n❌ Failed documents:`)
+      failedDocuments.forEach(doc => {
+        console.log(`   - ${doc.id}: ${doc.reason}${doc.details ? ` (${doc.details})` : ''}`)
+      })
+    }
+
+    // Return error if no flashcards were generated
     if (allGeneratedFlashcards.length === 0) {
       return NextResponse.json(
         {
@@ -340,12 +413,14 @@ CRITICAL:
           solution: "Please ensure your documents contain extracted text content. Upload PDF or Word documents and wait for text extraction to complete.",
           processedDocuments,
           failedDocuments,
+          details: failedDocuments.map(d => `${d.id}: ${d.reason}`).join("; ")
         },
         { status: 400 },
       )
     }
 
-    return NextResponse.json({
+    // Return success with details about any failures
+    const response = {
       success: true,
       flashcards: allGeneratedFlashcards,
       metadata: {
@@ -353,11 +428,17 @@ CRITICAL:
         processedDocuments: processedDocuments.length,
         failedDocuments: failedDocuments.length,
         documentIds: processedDocuments,
+        failedDetails: failedDocuments.length > 0 ? failedDocuments : undefined
       },
-      message: `Successfully generated ${allGeneratedFlashcards.length} flashcards from ${processedDocuments.length} document(s)`,
-    })
+      message: failedDocuments.length > 0
+        ? `Generated ${allGeneratedFlashcards.length} flashcards from ${processedDocuments.length} document(s). ${failedDocuments.length} document(s) failed.`
+        : `Successfully generated ${allGeneratedFlashcards.length} flashcards from ${processedDocuments.length} document(s)`,
+    }
+
+    return NextResponse.json(response)
+
   } catch (error) {
-    console.error("Flashcard generation error:", error)
+    console.error("❌ Flashcard generation error:", error)
 
     let status = 500
     let errorMessage = "Failed to generate flashcards"

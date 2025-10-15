@@ -29,6 +29,8 @@ import FlashcardsStudy from "./flashcards-study"
 import ManualFlashCardCreator from "./Manual/ManualFlashCardCreator"
 import PreviewCards from "./Previews/PreviewCards"
 import UnderDevelopmentBanner from "@/components/common/underDevelopment"
+//import { FixDocumentsButton } from "./FixDocumentsButton"
+import { FlashcardGenerationDialog } from "./FlashcardGenerationDialog"
 
 interface Project {
   id: string
@@ -77,6 +79,10 @@ export default function ProjectsPage() {
   const [selectedDocumentIds, setSelectedDocumentIds] = useState<string[]>([])
   const [projectDropdownOpen, setProjectDropdownOpen] = useState(false)
   const [documentDropdownOpen, setDocumentDropdownOpen] = useState(false)
+
+  const [showGenerationDialog, setShowGenerationDialog] = useState(false)
+  const [generationStage, setGenerationStage] = useState<"extracting" | "generating" | "complete">("extracting")
+
 
   const availableDocuments = useMemo(() => {
     if (selectedProjectIds.length === 0) return []
@@ -129,71 +135,142 @@ export default function ProjectsPage() {
     }
   }
 
+  // Update your generateFlashcardsFromSelection function in ProjectsPage
+
   const generateFlashcardsFromSelection = async () => {
-    if (selectedDocumentIds.length === 0) {
-      toast({
-        title: "No Documents Selected",
-        description: "Please select at least one document to generate flashcards.",
-        variant: "destructive",
-      })
-      return
-    }
-
-    // Use a unique identifier for this generation operation
-    const generationId = "bulk-generation"
-    setGeneratingFlashcards(prev => new Set(prev).add(generationId))
-
-    try {
-      console.log("Starting flashcard generation for documents:", selectedDocumentIds)
-
-      const requestBody = {
-        subject: "Mixed",
-        documentIds: selectedDocumentIds,
-        projectIds: selectedProjectIds,
-      }
-      console.log("Request body:", requestBody)
-
-      const response = await fetch("/api/flashcards", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody),
-      })
-
-      console.log("Response status:", response.status)
-      const data = await response.json()
-      console.log("Response data:", data)
-
-      if (data.success && Array.isArray(data.flashcards)) {
-        console.log("Successfully generated flashcards:", data.flashcards.length)
-        toast({
-          title: "Success!",
-          description: `Generated ${data.flashcards.length} flashcards from ${selectedDocumentIds.length} document(s)`,
-        })
-        setGeneratedFlashcards(data.flashcards)
-        setShowFlashcardsStudy(true)
-      } else {
-        console.error("Failed to generate flashcards:", data.error)
-        toast({
-          title: "Generation Failed",
-          description: data.error || "Failed to generate flashcards",
-          variant: "destructive",
-        })
-      }
-    } catch (error) {
-      console.error("Failed to generate flashcards:", error)
-      toast({
-        title: "Error",
-        description: "Failed to generate flashcards. Please try again.",
-        variant: "destructive",
-      })
-    } finally {
-      setGeneratingFlashcards(prev => {
-        const newSet = new Set(prev)
-        newSet.delete(generationId)
-        return newSet
-      })
-    }
+  if (selectedDocumentIds.length === 0) {
+    toast({
+      title: "No Documents Selected",
+      description: "Please select at least one document to generate flashcards.",
+      variant: "destructive",
+    })
+    return
   }
+
+  const generationId = "bulk-generation"
+  setGeneratingFlashcards(prev => new Set(prev).add(generationId))
+  
+  // Show the beautiful loading dialog
+  setShowGenerationDialog(true)
+  setGenerationStage("extracting")
+
+  try {
+    console.log("🚀 Starting flashcard generation for documents:", selectedDocumentIds)
+
+    // STEP 1: Extract text from selected documents first
+    console.log("📝 Step 1: Ensuring documents have extracted text...")
+    
+    const extractResponse = await fetch("/api/documents/extract-selected", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ documentIds: selectedDocumentIds }),
+    })
+
+    const extractData = await extractResponse.json()
+    console.log("📝 Extraction result:", extractData)
+
+    if (extractData.success) {
+      if (extractData.results.triggered > 0) {
+        // Wait for extraction to complete (5 seconds)
+        await new Promise(resolve => setTimeout(resolve, 5000))
+      }
+
+      if (extractData.results.alreadyExtracted > 0) {
+        console.log(`✅ ${extractData.results.alreadyExtracted} document(s) already have content`)
+      }
+
+      if (extractData.results.failed.length > 0) {
+        console.warn("⚠️ Some documents failed extraction:", extractData.results.failed)
+      }
+    }
+
+    // STEP 2: Generate flashcards
+    console.log("🤖 Step 2: Generating flashcards...")
+    setGenerationStage("generating")
+
+    const requestBody = {
+      subject: "Mixed",
+      documentIds: selectedDocumentIds,
+      projectIds: selectedProjectIds,
+    }
+    console.log("📤 Flashcard request:", requestBody)
+
+    const response = await fetch("/api/flashcards", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(requestBody),
+    })
+
+    console.log("📥 Response status:", response.status)
+    const data = await response.json()
+    console.log("📥 Response data:", data)
+
+    // Close the dialog before showing results
+    setShowGenerationDialog(false)
+    setGenerationStage("complete")
+
+    if (data.success && Array.isArray(data.flashcards)) {
+      console.log("✅ Successfully generated flashcards:", data.flashcards.length)
+      
+      toast({
+        title: "Success! 🎉",
+        description: data.message,
+      })
+
+      // Show warning if some documents failed
+      if (data.metadata?.failedDocuments > 0 && data.metadata?.failedDetails) {
+        console.warn("⚠️ Some documents failed:", data.metadata.failedDetails)
+        
+        setTimeout(() => {
+          toast({
+            title: "Partial Success",
+            description: `${data.metadata.failedDocuments} document(s) could not be processed. Check console for details.`,
+            variant: "default",
+          })
+        }, 1000)
+      }
+
+      setGeneratedFlashcards(data.flashcards)
+      setShowFlashcardsStudy(true)
+    } else {
+      console.error("❌ Failed to generate flashcards:", data)
+      
+      let errorDescription = data.error || "Failed to generate flashcards"
+      
+      if (data.failedDocuments && data.failedDocuments.length > 0) {
+        errorDescription += `\n\nFailed documents:`
+        data.failedDocuments.forEach((doc: any) => {
+          errorDescription += `\n- ${doc.id}: ${doc.reason}`
+          if (doc.details) {
+            errorDescription += ` (${doc.details})`
+          }
+        })
+      }
+      
+      toast({
+        title: "Generation Failed",
+        description: errorDescription,
+        variant: "destructive",
+      })
+    }
+  } catch (error) {
+    console.error("❌ Failed to generate flashcards:", error)
+    setShowGenerationDialog(false)
+    
+    toast({
+      title: "Error",
+      description: "Failed to generate flashcards. Please try again.",
+      variant: "destructive",
+    })
+  } finally {
+    setGeneratingFlashcards(prev => {
+      const newSet = new Set(prev)
+      newSet.delete(generationId)
+      return newSet
+    })
+  }
+  }
+
 
   const fetchProjects = async () => {
     if (status !== "authenticated") return
@@ -714,6 +791,7 @@ export default function ProjectsPage() {
             </p>
           </div>
           <div className="flex gap-3">
+            {/*<FixDocumentsButton onComplete={fetchProjects} />*/}
             <PreviewCards className="bg-purple-700 text-white hover:bg-purple-800" />
             <ManualFlashCardCreator />
           </div>
@@ -901,6 +979,12 @@ export default function ProjectsPage() {
           </CardContent>
         </Card>
       </main>
+      {/* The loading dialog */}
+    <FlashcardGenerationDialog
+      open={showGenerationDialog}
+      documentCount={selectedDocumentIds.length}
+      stage={generationStage}
+    />
     </div>
   )
 }
