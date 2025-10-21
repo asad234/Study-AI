@@ -1,13 +1,16 @@
+// In collections/Flashcards/index.ts
+// Replace your entire hooks section with this:
+
 import type { CollectionConfig } from "payload"
 import { afterFlashcardChange, afterFlashcardDelete } from "./hooks/revalidate"
 
 export const Flashcards: CollectionConfig = {
   slug: "flashcards",
   access: {
-    read: () => true, // Allow reading flashcards (filtering handled in API)
-    create: () => true, // Allow creating flashcards (user validation in API)
-    update: () => true, // Allow updating flashcards (user validation in API)
-    delete: () => true, // Allow deleting flashcards (user validation in API)
+    read: () => true,
+    create: () => true,
+    update: () => true,
+    delete: () => true,
   },
   admin: {
     defaultColumns: ["question", "answer", "difficulty", "mastered", "review_count"],
@@ -27,6 +30,12 @@ export const Flashcards: CollectionConfig = {
       relationTo: "profiles",
       required: true,
       admin: { description: "Owner of the flashcard" },
+    },
+    {
+      name: "flashcardSet",
+      type: "relationship",
+      relationTo: "flashcard-sets",
+      admin: { description: "The set this flashcard belongs to (optional)" },
     },
     { name: "question", type: "text", required: true },
     { name: "answer", type: "text", required: true },
@@ -52,7 +61,11 @@ export const Flashcards: CollectionConfig = {
     { name: "next_review", type: "date" },
   ],
   hooks: {
-    afterChange: [afterFlashcardChange],
+    afterChange: [
+      afterFlashcardChange,
+      // ✅ REMOVED: The problematic hook that was causing DB errors
+      // Mastery percentage will be calculated on-demand instead
+    ],
     afterDelete: [afterFlashcardDelete],
   },
   timestamps: true,

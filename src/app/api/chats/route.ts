@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "OpenAI API key not configured" }, { status: 500 })
     }
 
-    const { message, conversationId, documentIds, projectIds } = await request.json()
+    const { message, conversationId, documentIds } = await request.json()
 
     if (!message || typeof message !== "string") {
       return NextResponse.json({ error: "Message is required" }, { status: 400 })
@@ -45,65 +45,120 @@ export async function POST(request: NextRequest) {
 
     const userProfile = userProfiles.docs[0]
 
-    const documents = await payload.find({
-      collection: "documents",
-      where: {
-        id: { in: documentIds },
-        user: { equals: userProfile.id },
-        status: { equals: "ready" },
-      },
-      limit: 50,
-    })
+    // Process documents with validation (similar to flashcard API)
+    const validDocuments: Array<{
+      id: string
+      title: string
+      content: string
+    }> = []
+    const failedDocuments: Array<{
+      id: string
+      reason: string
+    }> = []
 
-    if (!documents.docs.length) {
-      return NextResponse.json({ error: "No valid documents found" }, { status: 404 })
+    console.log(`\n📚 Processing ${documentIds.length} document(s) for chat`)
+
+    for (const documentId of documentIds) {
+      try {
+        console.log(`\n📄 Processing document: ${documentId}`)
+
+        // Fetch document
+        const document = await payload.findByID({
+          collection: "documents",
+          id: documentId,
+        })
+
+        if (!document) {
+          console.error(`❌ Document not found: ${documentId}`)
+          failedDocuments.push({ id: documentId, reason: "Document not found" })
+          continue
+        }
+
+        console.log(`✓ Document found: ${document.title || document.file_name}`)
+
+        // Check ownership
+        const documentUserId =
+          typeof document.user === "object" && document.user !== null
+            ? document.user.id
+            : document.user
+
+        if (documentUserId !== userProfile.id) {
+          console.error(`❌ Access denied for document: ${documentId}`)
+          failedDocuments.push({ id: documentId, reason: "Access denied" })
+          continue
+        }
+
+        // Check if document is ready
+        if (document.status !== "ready") {
+          console.error(`❌ Document not ready: ${documentId} (status: ${document.status})`)
+          failedDocuments.push({
+            id: documentId,
+            reason: `Document not ready (status: ${document.status})`,
+          })
+          continue
+        }
+
+        // Get content with validation
+        const documentContent = document.notes || ""
+
+        if (!documentContent || documentContent.length < 50) {
+          console.error(`❌ Insufficient content: ${documentId} (${documentContent.length} chars)`)
+          failedDocuments.push({
+            id: documentId,
+            reason: `Insufficient content (${documentContent.length} characters)`,
+          })
+          continue
+        }
+
+        console.log(`✓ Valid content: ${documentContent.length} characters`)
+
+        validDocuments.push({
+          id: documentId,
+          title: document.title || document.file_name || "Untitled",
+          content: documentContent,
+        })
+      } catch (docError) {
+        console.error(`❌ Error processing document ${documentId}:`, docError)
+        failedDocuments.push({
+          id: documentId,
+          reason: docError instanceof Error ? docError.message : "Unknown error",
+        })
+      }
     }
 
-    // DEBUG: Log document structure to understand what fields are available
-    console.log("=== DOCUMENT DEBUG INFO ===")
-    documents.docs.forEach((doc, index) => {
-      console.log(`Document ${index + 1}:`, {
-        id: doc.id,
-        title: doc.title,
-        status: doc.status,
-        notesLength: doc.notes?.length || 0,
-        notesPreview: doc.notes?.substring(0, 200) || "NO NOTES FIELD",
-        availableFields: Object.keys(doc),
-      })
-    })
+    // Check if we have any valid documents
+    if (validDocuments.length === 0) {
+      return NextResponse.json(
+        {
+          error: "No valid documents available for chat",
+          details: failedDocuments,
+          solution: "Please ensure your documents have extracted text content and are marked as 'ready'",
+        },
+        { status: 400 }
+      )
+    }
 
-    // Try different possible content fields
-    const documentContext = documents.docs
-      .map((doc) => {
-        // Try multiple possible content fields
-        const content = 
-          doc.notes || 
-          doc.content || 
-          doc.extracted_text || 
-          doc.text || 
-          "No content available"
-        
-        console.log(`Document "${doc.title}" content length:`, content.length)
-        return `[Document: ${doc.title}]\n${content}\n`
-      })
-      .join("\n")
+    console.log(`✅ ${validDocuments.length} valid document(s) ready for chat`)
+    if (failedDocuments.length > 0) {
+      console.log(`⚠️ ${failedDocuments.length} document(s) failed:`, failedDocuments)
+    }
 
-    // DEBUG: Log the full context being sent to OpenAI
-    console.log("=== CONTEXT BEING SENT TO OPENAI ===")
-    console.log("Total context length:", documentContext.length)
-    console.log("Context preview (first 500 chars):", documentContext.substring(0, 500))
-    console.log("Context preview (last 500 chars):", documentContext.substring(documentContext.length - 500))
+    // Build document context
+    const documentContext = validDocuments
+      .map((doc) => `[Document: ${doc.title}]\n${doc.content}\n`)
+      .join("\n---\n\n")
 
-    const documentTitles = documents.docs.map((doc) => doc.title)
+    const documentTitles = validDocuments.map((doc) => doc.title)
+
+    console.log("📝 Total context length:", documentContext.length, "characters")
 
     // Get or create conversation
     let conversation
     if (conversationId) {
-      const existingConversation = await payload.findByID({
+      conversation = await payload.findByID({
         collection: "chat_conversations",
         id: conversationId,
       })
-      conversation = existingConversation
     } else {
       conversation = await payload.create({
         collection: "chat_conversations",
@@ -128,7 +183,15 @@ export async function POST(request: NextRequest) {
       },
     })
 
-    const systemPrompt = `You are StudyBuddy, an AI tutor that helps students learn from their study materials. Answer questions clearly based on the uploaded documents.
+    const systemPrompt = `You are StudyBuddy, an AI tutor that helps students learn from their study materials. Answer questions by intelligently analyzing the uploaded documents for relevant information.
+
+INTELLIGENT DOCUMENT ANALYSIS:
+- Look for RELATED TOPICS, not just exact keyword matches
+- If asked about "data processing", also consider content about "computation", "data handling", "algorithms", etc.
+- Use SEMANTIC UNDERSTANDING to find relevant sections
+- Synthesize answers from similar subjects and related concepts
+- Connect ideas across different parts of the documents
+- Even if exact answer isn't present, use related content to construct helpful responses
 
 RESPONSE STRUCTURE - FOLLOW EXACTLY:
 
@@ -152,17 +215,30 @@ SUMMARY:
 
 End with:
 (Source: [Document Name])
-
 or for Swedish documents:
 (Källa: [Document Name])
 
+OR if using general knowledge:
+(Source: General Knowledge - this information is not from your uploaded documents)
+or for Swedish:
+(Källa: Allmän kunskap - denna information kommer inte från dina uppladdade dokument)
+
 IMPORTANT RULES:
-1. Always search the document first for the answer
-2. For multiple choice questions, show all options and state which is correct
-3. Break down complex topics into clear elements
-4. Each element should focus on ONE key point
-5. Keep explanations clear and educational
-6. Use simple language that students can understand
+1. FIRST, intelligently search documents for RELATED topics and concepts (not just exact keywords)
+2. If RELATED information is found in documents, use it to construct the answer and cite the document(s)
+3. Look for similar subjects: if asked about "machine learning", also consider "AI", "neural networks", "training models", etc.
+4. Synthesize information from multiple related sections if needed
+5. Only use general knowledge if NO related information exists in any documents
+6. When using document content (even if indirectly related), cite the specific document(s)
+7. When using general knowledge, CLEARLY state this in the source citation
+8. For multiple choice questions, show all options and state which is correct
+9. Break down complex topics into clear elements
+10. Each element should focus on ONE key point
+11. Keep explanations clear and educational
+12. Use simple language that students can understand
+
+AVAILABLE DOCUMENTS:
+You have access to ${validDocuments.length} document(s): ${documentTitles.join(", ")}
 
 DOCUMENT CONTENT:
 ${documentContext}
@@ -170,32 +246,35 @@ ${documentContext}
 STUDENT QUESTION: ${message}
 
 REMEMBER:
+- PRIORITIZE document content (including RELATED topics) over general knowledge
+- Be SMART about finding relevant information - think semantically, not just keywords
+- If documents discuss similar subjects, use that content even if not exact match
 - Use ELEMENT 1, ELEMENT 2, ELEMENT 3 format
 - Each element = one key concept with explanation
 - End with SUMMARY and source
-- Base everything on the document content`
+- If answer is from documents (or related content in documents), cite document names
+- If answer is from general knowledge, clearly state "Source: General Knowledge - this information is not from your uploaded documents" or "Källa: Allmän kunskap - denna information kommer inte från dina uppladdade dokument"
+- Be transparent about your information source
+- ALWAYS try to find something relevant in the documents before using general knowledge`
 
-    // DEBUG: Log the system prompt length
-    console.log("=== SYSTEM PROMPT INFO ===")
-    console.log("System prompt length:", systemPrompt.length)
+    console.log("🤖 Generating AI response...")
 
     // Generate AI response using OpenAI
     const completion = await openai.chat.completions.create({
-      model: "gpt-4o", // Best model for instruction following and tutoring
+      model: "gpt-4o",
       messages: [
         { role: "system", content: systemPrompt },
         { role: "user", content: message },
       ],
-      temperature: 0.3, // Lower = more consistent
-      max_tokens: 2000, // Increased for better explanations
+      temperature: 0.3,
+      max_tokens: 2000,
     })
 
-    const aiResponse = completion.choices[0]?.message?.content || "I apologize, but I couldn't generate a response."
+    const aiResponse = completion.choices[0]?.message?.content || 
+      "I apologize, but I couldn't generate a response."
 
-    // DEBUG: Log token usage
-    console.log("=== OPENAI RESPONSE INFO ===")
-    console.log("Tokens used:", completion.usage)
-    console.log("Response length:", aiResponse.length)
+    console.log("✅ AI response generated")
+    console.log("📊 Token usage:", completion.usage)
 
     // Save AI response
     const aiMessage = await payload.create({
@@ -207,6 +286,8 @@ REMEMBER:
         content: aiResponse,
         metadata: {
           relatedFiles: documentTitles,
+          processedDocuments: validDocuments.length,
+          failedDocuments: failedDocuments.length,
         },
         created_at: new Date().toISOString(),
       },
@@ -221,11 +302,22 @@ REMEMBER:
         relatedFiles: documentTitles,
       },
       conversationId: conversation.id,
+      metadata: {
+        processedDocuments: validDocuments.length,
+        failedDocuments: failedDocuments.length,
+        ...(failedDocuments.length > 0 && { failedDetails: failedDocuments }),
+      },
     }
 
     return NextResponse.json({ success: true, ...response })
   } catch (error) {
-    console.error("Chat API error:", error)
-    return NextResponse.json({ error: "Failed to process chat message" }, { status: 500 })
+    console.error("❌ Chat API error:", error)
+    return NextResponse.json(
+      { 
+        error: "Failed to process chat message",
+        details: error instanceof Error ? error.message : "Unknown error"
+      },
+      { status: 500 }
+    )
   }
 }
