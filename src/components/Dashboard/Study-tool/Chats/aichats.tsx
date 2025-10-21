@@ -10,7 +10,7 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Send, Bot, User, FileText, MessageSquare, ChevronDown, Lightbulb, ChevronUp } from "lucide-react"
+import { Send, Bot, User, FileText, MessageSquare, ChevronDown, Lightbulb, ChevronUp, Loader2 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 
 interface Message {
@@ -109,6 +109,7 @@ export default function AIChatPage() {
   ])
   const [inputMessage, setInputMessage] = useState("")
   const [isTyping, setIsTyping] = useState(false)
+  const [isExtracting, setIsExtracting] = useState(false)
   const [conversationId, setConversationId] = useState<string | null>(null)
 
   // Project and document selection
@@ -151,11 +152,22 @@ export default function AIChatPage() {
     fetchProjects()
   }, [toast])
 
+  // Fetch suggested questions based on selected documents
   useEffect(() => {
     const fetchSuggestedQuestions = async () => {
+      // Don't fetch if no documents selected
+      if (selectedDocuments.length === 0) {
+        setSuggestedQuestions([])
+        setIsLoadingSuggestions(false)
+        return
+      }
+
       try {
         setIsLoadingSuggestions(true)
-        const response = await fetch("/api/chats/suggested")
+        const queryParams = new URLSearchParams()
+        selectedDocuments.forEach(id => queryParams.append('documentIds', id))
+        
+        const response = await fetch(`/api/chats/suggested?${queryParams.toString()}`)
         if (response.ok) {
           const data = await response.json()
           if (data.success && Array.isArray(data.questions)) {
@@ -170,7 +182,7 @@ export default function AIChatPage() {
     }
 
     fetchSuggestedQuestions()
-  }, [])
+  }, [selectedDocuments])
 
   // Update available documents when projects are selected
   useEffect(() => {
@@ -232,7 +244,7 @@ export default function AIChatPage() {
     setInputMessage(question)
   }
 
-  // Send message
+  // Send message with extraction
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return
 
@@ -253,17 +265,57 @@ export default function AIChatPage() {
     }
 
     setMessages((prev) => [...prev, userMessage])
+    const currentMessage = inputMessage
     setInputMessage("")
-    setIsTyping(true)
-
+    
     try {
+      // STEP 1: Extract text from selected documents first
+      console.log("📝 Step 1: Ensuring documents have extracted text...")
+      setIsExtracting(true)
+      
+      const extractResponse = await fetch("/api/documents/extract-selected", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ documentIds: selectedDocuments }),
+      })
+
+      const extractData = await extractResponse.json()
+      console.log("📝 Extraction result:", extractData)
+
+      if (extractData.success) {
+        if (extractData.results.triggered > 0) {
+          // Show toast that extraction is happening
+          toast({
+            title: "Preparing documents...",
+            description: `Extracting text from ${extractData.results.triggered} document(s)`,
+          })
+          // Wait for extraction to complete (5 seconds)
+          await new Promise(resolve => setTimeout(resolve, 5000))
+        }
+
+        if (extractData.results.failed.length > 0) {
+          console.warn("⚠️ Some documents failed extraction:", extractData.results.failed)
+          toast({
+            title: "Warning",
+            description: `${extractData.results.failed.length} document(s) couldn't be processed`,
+            variant: "default",
+          })
+        }
+      }
+
+      setIsExtracting(false)
+
+      // STEP 2: Send chat message
+      console.log("💬 Step 2: Sending chat message...")
+      setIsTyping(true)
+
       const response = await fetch("/api/chats", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          message: inputMessage,
+          message: currentMessage,
           conversationId,
           documentIds: selectedDocuments,
           projectIds: selectedProjects,
@@ -286,6 +338,15 @@ export default function AIChatPage() {
 
         setMessages((prev) => [...prev, aiMessage])
         setConversationId(data.conversationId)
+
+        // Show warning if some documents failed in the chat API
+        if (data.metadata?.failedDocuments > 0) {
+          toast({
+            title: "Partial Success",
+            description: `Used ${data.metadata.processedDocuments} document(s). ${data.metadata.failedDocuments} couldn't be processed.`,
+            variant: "default",
+          })
+        }
       } else {
         throw new Error(data.error || "Failed to send message")
       }
@@ -298,6 +359,7 @@ export default function AIChatPage() {
       })
     } finally {
       setIsTyping(false)
+      setIsExtracting(false)
     }
   }
 
@@ -544,7 +606,15 @@ export default function AIChatPage() {
 
                           {/* Source */}
                           {message.structuredContent.source && (
-                            <div className="text-xs text-gray-600 dark:text-gray-400 italic pt-3 border-t border-gray-200 dark:border-gray-700">
+                            <div className={`text-xs italic pt-3 border-t ${
+                              message.structuredContent.source.toLowerCase().includes('general knowledge') ||
+                              message.structuredContent.source.toLowerCase().includes('allmän kunskap')
+                                ? 'text-orange-600 dark:text-orange-400 border-orange-200 dark:border-orange-700'
+                                : 'text-gray-600 dark:text-gray-400 border-gray-200 dark:border-gray-700'
+                            }`}>
+                              {message.structuredContent.source.toLowerCase().includes('general knowledge') ||
+                               message.structuredContent.source.toLowerCase().includes('allmän kunskap')
+                                ? '⚠️ ' : ''}
                               {message.structuredContent.source}
                             </div>
                           )}
@@ -584,7 +654,7 @@ export default function AIChatPage() {
                   </div>
                 ))}
 
-                {isTyping && (
+                {(isTyping || isExtracting) && (
                   <div className="flex gap-4 justify-start">
                     <Avatar className="w-10 h-10 border-2 border-blue-200 dark:border-blue-800 shadow-md">
                       <AvatarFallback className="bg-gradient-to-r from-blue-500 to-purple-500 text-white">
@@ -592,17 +662,24 @@ export default function AIChatPage() {
                       </AvatarFallback>
                     </Avatar>
                     <div className="bg-white/90 dark:bg-gray-800/90 rounded-2xl p-4 shadow-lg border border-gray-200 dark:border-gray-700 backdrop-blur-sm">
-                      <div className="flex space-x-2">
-                        <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
-                        <div
-                          className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"
-                          style={{ animationDelay: "0.1s" }}
-                        ></div>
-                        <div
-                          className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"
-                          style={{ animationDelay: "0.2s" }}
-                        ></div>
-                      </div>
+                      {isExtracting ? (
+                        <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Extracting document text...</span>
+                        </div>
+                      ) : (
+                        <div className="flex space-x-2">
+                          <div className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"></div>
+                          <div
+                            className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"
+                            style={{ animationDelay: "0.1s" }}
+                          ></div>
+                          <div
+                            className="w-2 h-2 bg-blue-400 rounded-full animate-bounce"
+                            style={{ animationDelay: "0.2s" }}
+                          ></div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 )}
@@ -621,14 +698,19 @@ export default function AIChatPage() {
                     value={inputMessage}
                     onChange={(e) => setInputMessage(e.target.value)}
                     onKeyPress={handleKeyPress}
+                    disabled={isTyping || isExtracting}
                     className="flex-1 border-2 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-base bg-white/90 dark:bg-gray-800/90 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 transition-all duration-200"
                   />
                   <Button
                     onClick={handleSendMessage}
-                    disabled={!inputMessage.trim() || isTyping || selectedDocuments.length === 0}
+                    disabled={!inputMessage.trim() || isTyping || isExtracting || selectedDocuments.length === 0}
                     className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50"
                   >
-                    <Send className="w-5 h-5" />
+                    {isTyping || isExtracting ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : (
+                      <Send className="w-5 h-5" />
+                    )}
                   </Button>
                 </div>
               </div>
@@ -645,10 +727,22 @@ export default function AIChatPage() {
                   </div>
                   Suggested Questions
                 </CardTitle>
+                {selectedDocuments.length > 0 && !isLoadingSuggestions && (
+                  <CardDescription className="text-xs">
+                    Based on {selectedDocuments.length} selected document{selectedDocuments.length > 1 ? "s" : ""}
+                  </CardDescription>
+                )}
               </CardHeader>
               <CardContent className="space-y-3 p-4">
-                {isLoadingSuggestions ? (
-                  <div className="text-sm text-gray-500 text-center py-8">Loading suggestions...</div>
+                {selectedDocuments.length === 0 ? (
+                  <div className="text-sm text-gray-500 text-center py-8">
+                    Select documents above to get personalized questions! 💡
+                  </div>
+                ) : isLoadingSuggestions ? (
+                  <div className="flex items-center justify-center gap-2 text-sm text-gray-500 py-8">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Generating questions...</span>
+                  </div>
                 ) : suggestedQuestions.length > 0 ? (
                   <>
                     {(showAllQuestions ? suggestedQuestions : suggestedQuestions.slice(0, 2)).map((item, index) => (
@@ -701,7 +795,7 @@ export default function AIChatPage() {
                   </>
                 ) : (
                   <div className="text-sm text-gray-500 text-center py-8">
-                    Upload study materials to get personalized questions!
+                    No questions available yet. Try selecting different documents!
                   </div>
                 )}
               </CardContent>
@@ -728,6 +822,10 @@ export default function AIChatPage() {
                 <div className="flex items-start gap-2">
                   <span className="text-orange-500">•</span>
                   <span>Request summaries of topics</span>
+                </div>
+                <div className="flex items-start gap-2">
+                  <span className="text-yellow-500">•</span>
+                  <span>Can answer beyond documents using general knowledge</span>
                 </div>
               </CardContent>
             </Card>

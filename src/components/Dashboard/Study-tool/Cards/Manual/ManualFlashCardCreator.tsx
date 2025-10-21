@@ -1,5 +1,5 @@
 "use client"
-import React, { useState, ChangeEvent, JSX } from 'react';
+import React, { useState, ChangeEvent } from 'react';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from '@/components/ui/card';
 import { Dialog, DialogTrigger, DialogContent, DialogTitle, DialogDescription, DialogHeader } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
@@ -21,14 +21,17 @@ import {
   BookOpen,
   Bot,
   User,
-  Loader2
+  Loader2,
+  AlertCircle,
+  CheckCircle
 } from 'lucide-react';
-import UnderDevelopmentBanner from '@/components/common/underDevelopment';
+import { toast } from '@/components/ui/use-toast';
 
-// Type definitions
 interface Flashcard {
   question: string;
   answer: string;
+  difficulty?: string;
+  tags?: string[];
 }
 
 interface FileWithMetadata {
@@ -36,10 +39,10 @@ interface FileWithMetadata {
   name: string;
   size: number;
   type: string;
+  documentId?: string;
 }
 
 const ManualFlashCardCreator: React.FC = () => {
-  // All state variables
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [projectName, setProjectName] = useState<string>('');
   const [category, setCategory] = useState<string>('');
@@ -51,6 +54,9 @@ const ManualFlashCardCreator: React.FC = () => {
   const [editingIndex, setEditingIndex] = useState<number>(-1);
   const [answerMode, setAnswerMode] = useState<'manual' | 'ai'>('manual');
   const [isGeneratingAnswer, setIsGeneratingAnswer] = useState<boolean>(false);
+  const [isUploadingFiles, setIsUploadingFiles] = useState<boolean>(false);
+  const [isCreatingDeck, setIsCreatingDeck] = useState<boolean>(false);
+  const [aiAnswerSource, setAiAnswerSource] = useState<string>('');
 
   const categories: string[] = [
     'Mathematics',
@@ -73,23 +79,95 @@ const ManualFlashCardCreator: React.FC = () => {
     'Professional Certification'
   ];
 
-  const handleFileUpload = (selectedFiles: FileList): void => {
+  const uploadFileToServer = async (file: File): Promise<string | null> => {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('title', file.name.split('.')[0]);
+
+      const response = await fetch('/api/upload', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+      if (data.success && data.document) {
+        return data.document.id;
+      }
+      return null;
+    } catch (error) {
+      console.error('Upload error:', error);
+      return null;
+    }
+  };
+
+  const handleFileUpload = async (selectedFiles: FileList): Promise<void> => {
     const newFiles: FileWithMetadata[] = Array.from(selectedFiles).map(file => ({
       file,
       name: file.name,
       size: file.size,
       type: file.type
     }));
+    
     setFiles(prevFiles => [...prevFiles, ...newFiles]);
+
+    // Upload files immediately to get document IDs
+    setIsUploadingFiles(true);
+    try {
+      const uploadedFiles: FileWithMetadata[] = [];
+      
+      for (const fileItem of newFiles) {
+        const documentId = await uploadFileToServer(fileItem.file);
+        if (documentId) {
+          uploadedFiles.push({ ...fileItem, documentId });
+        } else {
+          uploadedFiles.push(fileItem);
+          toast({
+            title: "Upload Warning",
+            description: `Failed to upload ${fileItem.name}. AI answers will be general for this file.`,
+            variant: "destructive"
+          });
+        }
+      }
+
+      // Update files with document IDs
+      setFiles(prevFiles => {
+        const updatedFiles = [...prevFiles];
+        newFiles.forEach((newFile, index) => {
+          const fileIndex = updatedFiles.findIndex(
+            f => f.name === newFile.name && f.size === newFile.size
+          );
+          if (fileIndex !== -1 && uploadedFiles[index].documentId) {
+            updatedFiles[fileIndex] = uploadedFiles[index];
+          }
+        });
+        return updatedFiles;
+      });
+
+      toast({
+        title: "Files Uploaded",
+        description: `Successfully uploaded ${uploadedFiles.filter(f => f.documentId).length} of ${newFiles.length} file(s)`,
+      });
+    } catch (error) {
+      console.error('Error uploading files:', error);
+      toast({
+        title: "Upload Error",
+        description: "Some files failed to upload. AI answers will be general.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsUploadingFiles(false);
+    }
   };
 
   const removeFile = (index: number): void => {
     setFiles(files.filter((_, i) => i !== index));
   };
 
-  const getFileIcon = (fileType: string): JSX.Element => {
+  const getFileIcon = (fileType: string) => {
     if (fileType.includes('pdf')) return <FileText className="w-6 h-6 text-red-500" />;
-    if (fileType.includes('presentation') || fileType.includes('powerpoint')) return <Presentation className="w-6 h-6 text-orange-500" />;
+    if (fileType.includes('presentation') || fileType.includes('powerpoint')) 
+      return <Presentation className="w-6 h-6 text-orange-500" />;
     if (fileType.includes('image')) return <Image className="w-6 h-6 text-green-500" />;
     return <FileText className="w-6 h-6 text-blue-500" />;
   };
@@ -102,80 +180,209 @@ const ManualFlashCardCreator: React.FC = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
-  const addFlashcard = (): void => {
-    if (!currentQuestion.trim() || !currentAnswer.trim()) return;
-    
-    const newCard: Flashcard = { question: currentQuestion, answer: currentAnswer };
-    
-    if (editingIndex >= 0) {
-      const updatedCards = [...flashcards];
-      updatedCards[editingIndex] = newCard;
-      setFlashcards(updatedCards);
-      setEditingIndex(-1);
-    } else {
-      setFlashcards(prevCards => [...prevCards, newCard]);
+  const generateAIAnswer = async (): Promise<void> => {
+    if (!currentQuestion.trim()) {
+      toast({
+        title: "Question Required",
+        description: "Please enter a question before generating an AI answer",
+        variant: "destructive"
+      });
+      return;
     }
     
-    setCurrentQuestion('');
-    setCurrentAnswer('');
-  };
-
-  const editFlashcard = (index: number): void => {
-    setCurrentQuestion(flashcards[index].question);
-    setCurrentAnswer(flashcards[index].answer);
-    setEditingIndex(index);
-  };
-
-  const deleteFlashcard = (index: number): void => {
-    setFlashcards(flashcards.filter((_, i) => i !== index));
-  };
-
-  const generateAIAnswer = async (): Promise<void> => {
-    if (!currentQuestion.trim()) return;
-    
     setIsGeneratingAnswer(true);
+    setAiAnswerSource('');
+    
     try {
-      // TODO: Replace with your actual AI API call
-      // This is a placeholder - you'll need to implement your AI service
-      const response = await fetch('/api/generate-answer', {
+      const documentIds = files
+        .filter(f => f.documentId)
+        .map(f => f.documentId);
+
+      console.log(`🤖 Generating AI answer for question with ${documentIds.length} document(s)...`);
+
+      const response = await fetch('/api/flashcards/generate-answer', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           question: currentQuestion,
-          files: files.map(f => f.file), // You may need to process files differently
+          documentIds: documentIds.length > 0 ? documentIds : undefined,
           category,
           studyGoal
         }),
       });
       
-      if (response.ok) {
-        const data = await response.json();
-        setCurrentAnswer(data.answer || '');
+      const data = await response.json();
+      console.log('📥 Answer generation response:', data);
+      
+      if (data.success && data.answer) {
+        setCurrentAnswer(data.answer);
+        
+        if (data.hasDocuments && data.documentsProcessed > 0) {
+          setAiAnswerSource(`Based on ${data.documentsProcessed} uploaded document(s)`);
+          toast({
+            title: "Answer Generated ✓",
+            description: `AI generated answer from ${data.documentsProcessed} document(s)`,
+          });
+        } else if (documentIds.length > 0 && data.documentsProcessed === 0) {
+          setAiAnswerSource('General answer (documents are being processed)');
+          toast({
+            title: "General Answer Generated",
+            description: "Your documents are still being processed. This is a general answer for now.",
+          });
+        } else {
+          setAiAnswerSource('General answer (no documents uploaded)');
+          toast({
+            title: "General Answer Generated",
+            description: "This is a general answer. Upload documents for more specific answers.",
+          });
+        }
       } else {
-        // Handle error
-        console.error('Failed to generate AI answer');
-        setCurrentAnswer('Failed to generate answer. Please try again or write manually.');
+        throw new Error(data.error || 'Failed to generate answer');
       }
     } catch (error) {
-      console.error('Error generating AI answer:', error);
-      setCurrentAnswer('Error generating answer. Please try again or write manually.');
+      console.error('❌ Error generating AI answer:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      setCurrentAnswer(`Failed to generate answer: ${errorMessage}`);
+      toast({
+        title: "Generation Failed",
+        description: "Failed to generate AI answer. Please try again or write manually.",
+        variant: "destructive"
+      });
     } finally {
       setIsGeneratingAnswer(false);
     }
   };
 
-  const handleCreate = (): void => {
-    // Handle the creation logic here
-    console.log({
-      projectName,
-      category,
-      studyGoal,
-      files: files.map(f => f.file),
-      flashcards
+  const addFlashcard = (): void => {
+    if (!currentQuestion.trim() || !currentAnswer.trim()) {
+      toast({
+        title: "Incomplete Flashcard",
+        description: "Both question and answer are required",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    const newCard: Flashcard = { 
+      question: currentQuestion.trim(), 
+      answer: currentAnswer.trim(),
+      difficulty: 'medium'
+    };
+    
+    if (editingIndex >= 0) {
+      const updatedCards = [...flashcards];
+      updatedCards[editingIndex] = newCard;
+      setFlashcards(updatedCards);
+      setEditingIndex(-1);
+      toast({
+        title: "Flashcard Updated",
+        description: "Your flashcard has been updated",
+      });
+    } else {
+      setFlashcards(prevCards => [...prevCards, newCard]);
+      toast({
+        title: "Flashcard Added",
+        description: "Flashcard added to your deck",
+      });
+    }
+    
+    setCurrentQuestion('');
+    setCurrentAnswer('');
+    setAiAnswerSource('');
+  };
+
+  const editFlashcard = (index: number): void => {
+    setCurrentQuestion(flashcards[index].question);
+    setCurrentAnswer(flashcards[index].answer);
+    setEditingIndex(index);
+    setAiAnswerSource('');
+  };
+
+  const deleteFlashcard = (index: number): void => {
+    setFlashcards(flashcards.filter((_, i) => i !== index));
+    toast({
+      title: "Flashcard Deleted",
+      description: "Flashcard removed from your deck",
     });
-    setIsCreateModalOpen(false);
+  };
+
+  const handleCreate = async (): Promise<void> => {
+    if (!projectName.trim()) {
+      toast({
+        title: "Deck Name Required",
+        description: "Please enter a name for your flashcard deck",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (flashcards.length === 0) {
+      toast({
+        title: "No Flashcards",
+        description: "Please add at least one flashcard to your deck",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setIsCreatingDeck(true);
+
+    try {
+      const documentIds = files
+        .filter(f => f.documentId)
+        .map(f => f.documentId);
+
+      const response = await fetch('/api/flashcard-sets/manual', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          projectName,
+          category,
+          studyGoal,
+          flashcards,
+          documentIds: documentIds.length > 0 ? documentIds : undefined,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast({
+          title: "Success! 🎉",
+          description: data.message,
+        });
+
+        // Reset form
+        setProjectName('');
+        setCategory('');
+        setStudyGoal('');
+        setFiles([]);
+        setFlashcards([]);
+        setCurrentQuestion('');
+        setCurrentAnswer('');
+        setAiAnswerSource('');
+        setIsCreateModalOpen(false);
+
+        // Optional: Redirect to flashcards page
+        // router.push('/dashboard/flash-cards-cards');
+      } else {
+        throw new Error(data.error || 'Failed to create flashcard deck');
+      }
+    } catch (error) {
+      console.error('Error creating flashcard deck:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      toast({
+        title: "Creation Failed",
+        description: errorMessage,
+        variant: "destructive"
+      });
+    } finally {
+      setIsCreatingDeck(false);
+    }
   };
 
   const handleFileChange = (e: ChangeEvent<HTMLInputElement>): void => {
@@ -190,15 +397,14 @@ const ManualFlashCardCreator: React.FC = () => {
         <DialogTrigger asChild>
           <Button onClick={() => setIsCreateModalOpen(true)} className="gap-2 bg-primary hover:bg-primary/90">
             <BookOpen className="w-4 h-4" />
-            Create Manual Flashcards
+            Create Flashcards
           </Button>
         </DialogTrigger>
         <DialogContent className="sm:max-w-[1000px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <UnderDevelopmentBanner/>
             <DialogTitle>Create Manual Flashcards</DialogTitle>
             <DialogDescription>
-              Upload your documents and create your own flashcards. AI will help you improve your answers based on uploaded materials.
+              Create your own flashcards with optional AI assistance from your uploaded materials.
             </DialogDescription>
           </DialogHeader>
           
@@ -264,9 +470,11 @@ const ManualFlashCardCreator: React.FC = () => {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Upload className="w-5 h-5" />
-                  Reference Materials
+                  Reference Materials (Optional)
                 </CardTitle>
-                <CardDescription>Upload documents that will help AI improve your answers.</CardDescription>
+                <CardDescription>
+                  Upload documents for AI-powered answers based on your materials.
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <div className="border-2 border-dashed rounded-lg p-6 text-center transition-colors hover:border-primary/50">
@@ -284,10 +492,20 @@ const ManualFlashCardCreator: React.FC = () => {
                     onChange={handleFileChange}
                     className="hidden"
                     id="file-upload"
+                    disabled={isUploadingFiles}
                   />
                   <label htmlFor="file-upload">
-                    <Button asChild variant="outline">
-                      <span className="cursor-pointer">Browse Files</span>
+                    <Button asChild variant="outline" disabled={isUploadingFiles}>
+                      <span className="cursor-pointer">
+                        {isUploadingFiles ? (
+                          <>
+                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            Uploading...
+                          </>
+                        ) : (
+                          'Browse Files'
+                        )}
+                      </span>
                     </Button>
                   </label>
                 </div>
@@ -306,7 +524,12 @@ const ManualFlashCardCreator: React.FC = () => {
                           {getFileIcon(fileItem.type)}
                           <div className="flex-1 min-w-0">
                             <p className="text-sm font-medium truncate">{fileItem.name}</p>
-                            <p className="text-xs text-gray-500">{formatFileSize(fileItem.size)}</p>
+                            <div className="flex items-center gap-2">
+                              <p className="text-xs text-gray-500">{formatFileSize(fileItem.size)}</p>
+                              {fileItem.documentId && (
+                                <CheckCircle className="w-3 h-3 text-green-500" />
+                              )}
+                            </div>
                           </div>
                           <Button variant="ghost" size="sm" onClick={() => removeFile(index)}>
                             <X className="w-4 h-4" />
@@ -326,7 +549,7 @@ const ManualFlashCardCreator: React.FC = () => {
                   <Edit3 className="w-5 h-5" />
                   Create Flashcards
                 </CardTitle>
-                <CardDescription>Add questions and choose how to create answers.</CardDescription>
+                <CardDescription>Add questions and create answers manually or with AI.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 {/* Answer Mode Selection */}
@@ -347,22 +570,24 @@ const ManualFlashCardCreator: React.FC = () => {
                       size="sm"
                       onClick={() => setAnswerMode('ai')}
                       className="gap-2"
-                      disabled={files.length === 0}
                     >
                       <Bot className="w-4 h-4" />
                       AI Generated
                     </Button>
                   </div>
                   {answerMode === 'ai' && files.length === 0 && (
-                    <p className="text-xs text-amber-600 mt-1">
-                      Upload reference materials to enable AI-generated answers
+                    <p className="text-xs text-amber-600 mt-1 flex items-center gap-1">
+                      <AlertCircle className="w-3 h-3" />
+                      No documents uploaded - AI will provide general answers
                     </p>
                   )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
-                    <Label htmlFor="question">Question</Label>
+                    <Label htmlFor="question">
+                      Question <span className="text-red-500">*</span>
+                    </Label>
                     <Textarea
                       id="question"
                       placeholder="Enter your question here..."
@@ -373,13 +598,15 @@ const ManualFlashCardCreator: React.FC = () => {
                   </div>
                   <div>
                     <div className="flex items-center justify-between">
-                      <Label htmlFor="answer">Answer</Label>
+                      <Label htmlFor="answer">
+                        Answer <span className="text-red-500">*</span>
+                      </Label>
                       {answerMode === 'ai' && (
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={generateAIAnswer}
-                          disabled={!currentQuestion.trim() || isGeneratingAnswer || files.length === 0}
+                          disabled={!currentQuestion.trim() || isGeneratingAnswer}
                           className="gap-2 text-xs"
                         >
                           {isGeneratingAnswer ? (
@@ -401,13 +628,19 @@ const ManualFlashCardCreator: React.FC = () => {
                       placeholder={
                         answerMode === 'manual' 
                           ? "Enter your answer here..." 
-                          : "Click 'Generate with AI' or write manually..."
+                          : "Enter question first, then click 'Generate with AI'..."
                       }
                       value={currentAnswer}
                       onChange={(e: ChangeEvent<HTMLTextAreaElement>) => setCurrentAnswer(e.target.value)}
                       rows={3}
                       disabled={isGeneratingAnswer}
                     />
+                    {aiAnswerSource && (
+                      <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                        <Sparkles className="w-3 h-3" />
+                        {aiAnswerSource}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="flex justify-end">
@@ -472,16 +705,29 @@ const ManualFlashCardCreator: React.FC = () => {
 
             {/* Action Buttons */}
             <div className="flex justify-end gap-3">
-              <Button variant="outline" onClick={() => setIsCreateModalOpen(false)}>
+              <Button 
+                variant="outline" 
+                onClick={() => setIsCreateModalOpen(false)}
+                disabled={isCreatingDeck}
+              >
                 Cancel
               </Button>
               <Button 
                 onClick={handleCreate} 
-                disabled={!projectName.trim() || flashcards.length === 0}
+                disabled={!projectName.trim() || flashcards.length === 0 || isCreatingDeck}
                 className="gap-2"
               >
-                <BookOpen className="w-4 h-4" />
-                Create Flashcard Deck
+                {isCreatingDeck ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  <>
+                    <BookOpen className="w-4 h-4" />
+                    Create Flashcard Deck
+                  </>
+                )}
               </Button>
             </div>
           </div>

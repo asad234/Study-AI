@@ -83,6 +83,11 @@ export default function ProjectsPage() {
   const [showGenerationDialog, setShowGenerationDialog] = useState(false)
   const [generationStage, setGenerationStage] = useState<"extracting" | "generating" | "complete">("extracting")
 
+  const [currentProjectInfo, setCurrentProjectInfo] = useState<{
+  name: string
+  id: string
+} | null>(null)
+
 
   const availableDocuments = useMemo(() => {
     if (selectedProjectIds.length === 0) return []
@@ -150,11 +155,25 @@ export default function ProjectsPage() {
   const generationId = "bulk-generation"
   setGeneratingFlashcards(prev => new Set(prev).add(generationId))
   
-  // Show the beautiful loading dialog
   setShowGenerationDialog(true)
   setGenerationStage("extracting")
 
-  try {
+  const handleManualFlashcardsCreated = (flashcards: any[], projectInfo: { name: string; id: string }) => {
+  console.log("✨ Manual flashcards created, showing study view...");
+  console.log("Flashcards:", flashcards.length);
+  console.log("Project info:", projectInfo);
+  
+  // Set the project info
+  setCurrentProjectInfo(projectInfo);
+  
+  // Set the flashcards
+  setGeneratedFlashcards(flashcards);
+  
+  // Show the study view
+  setShowFlashcardsStudy(true);
+};
+
+ try {
     console.log("🚀 Starting flashcard generation for documents:", selectedDocumentIds)
 
     // STEP 1: Extract text from selected documents first
@@ -171,7 +190,6 @@ export default function ProjectsPage() {
 
     if (extractData.success) {
       if (extractData.results.triggered > 0) {
-        // Wait for extraction to complete (5 seconds)
         await new Promise(resolve => setTimeout(resolve, 5000))
       }
 
@@ -205,7 +223,6 @@ export default function ProjectsPage() {
     const data = await response.json()
     console.log("📥 Response data:", data)
 
-    // Close the dialog before showing results
     setShowGenerationDialog(false)
     setGenerationStage("complete")
 
@@ -228,6 +245,27 @@ export default function ProjectsPage() {
             variant: "default",
           })
         }, 1000)
+      }
+
+      // ✨ NEW: Store project info for the study session
+      if (selectedProjectIds.length === 1) {
+        const selectedProject = projects.find(p => p.id === selectedProjectIds[0])
+        if (selectedProject) {
+          setCurrentProjectInfo({
+            name: selectedProject.name,
+            id: selectedProject.id
+          })
+        }
+      } else if (selectedProjectIds.length > 1) {
+        const projectNames = projects
+          .filter(p => selectedProjectIds.includes(p.id))
+          .map(p => p.name)
+          .join(', ')
+        
+        setCurrentProjectInfo({
+          name: projectNames || `${selectedProjectIds.length} Projects`,
+          id: selectedProjectIds.join(',')
+        })
       }
 
       setGeneratedFlashcards(data.flashcards)
@@ -269,7 +307,7 @@ export default function ProjectsPage() {
       return newSet
     })
   }
-  }
+}
 
 
   const fetchProjects = async () => {
@@ -773,7 +811,10 @@ export default function ProjectsPage() {
             onBack={() => {
               setShowFlashcardsStudy(false)
               setGeneratedFlashcards([])
+              setCurrentProjectInfo(null)  // ✨ Clear project info
             }}
+            projectName={currentProjectInfo?.name}  // ✨ Pass project name
+            projectId={currentProjectInfo?.id}      // ✨ Pass project ID
           />
         </div>
       </div>
@@ -792,7 +833,7 @@ export default function ProjectsPage() {
           </div>
           <div className="flex gap-3">
             {/*<FixDocumentsButton onComplete={fetchProjects} />*/}
-            <PreviewCards className="bg-purple-700 text-white hover:bg-purple-800" />
+            <PreviewCards className="bg-white border-black text-black hover:bg-blue-200" />
             <ManualFlashCardCreator />
           </div>
         </div>
