@@ -7,7 +7,8 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Label } from "@/components/ui/label"
-import { Clock, CheckCircle, X, RotateCcw, Trophy, ArrowLeft } from "lucide-react"
+import { Clock, CheckCircle, X, RotateCcw, Trophy, ArrowLeft, Save, Loader2 } from "lucide-react"
+import { toast } from "@/components/ui/use-toast"
 
 interface Question {
   id: string
@@ -29,16 +30,28 @@ interface QuizResult {
 interface QuizStudyProps {
   questions: Question[]
   quizId: string
+  quizName?: string
+  isAIGenerated?: boolean
+  timeLimit?: number
   onBack: () => void
 }
 
-export default function QuizStudy({ questions, quizId, onBack }: QuizStudyProps) {
+export default function QuizStudy({ 
+  questions, 
+  quizId, 
+  quizName = "Quiz",
+  isAIGenerated = false,
+  timeLimit,
+  onBack 
+}: QuizStudyProps) {
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0)
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null)
   const [showResult, setShowResult] = useState(false)
   const [quizResults, setQuizResults] = useState<QuizResult[]>([])
   const [quizCompleted, setQuizCompleted] = useState(false)
   const [startTime, setStartTime] = useState<number>(Date.now())
+  const [isSaving, setIsSaving] = useState(false)
+  const [isSaved, setIsSaved] = useState(false)
 
   const currentQuestion = questions[currentQuestionIndex]
   const progress = ((currentQuestionIndex + 1) / questions.length) * 100
@@ -94,6 +107,53 @@ export default function QuizStudy({ questions, quizId, onBack }: QuizStudyProps)
     }
   }
 
+  const handleSaveQuiz = async () => {
+    if (isSaving || isSaved) return
+
+    setIsSaving(true)
+
+    try {
+      const score = calculateScore()
+      
+      const response = await fetch("/api/quiz-sets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: quizName,
+          questions: questions,
+          questionCount: questions.length,
+          difficulty: currentQuestion.difficulty,
+          timeLimit: timeLimit,
+          lastScore: score,
+          isAIGenerated: isAIGenerated,
+          subject: currentQuestion.subject,
+          quizResults: quizResults,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (data.success) {
+        setIsSaved(true)
+        toast({
+          title: "Quiz Saved!",
+          description: data.message || `"${quizName}" has been saved to your quiz library.`,
+        })
+      } else {
+        throw new Error(data.error || "Failed to save quiz")
+      }
+    } catch (error) {
+      console.error("Error saving quiz:", error)
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to save quiz. Please try again.",
+        variant: "destructive",
+      })
+    } finally {
+      setIsSaving(false)
+    }
+  }
+
   const restartQuiz = () => {
     setCurrentQuestionIndex(0)
     setSelectedAnswer(null)
@@ -101,6 +161,7 @@ export default function QuizStudy({ questions, quizId, onBack }: QuizStudyProps)
     setQuizResults([])
     setQuizCompleted(false)
     setStartTime(Date.now())
+    setIsSaved(false)
   }
 
   const getDifficultyColor = (difficulty: string) => {
@@ -201,17 +262,43 @@ export default function QuizStudy({ questions, quizId, onBack }: QuizStudyProps)
                 })}
               </div>
 
-              <div className="flex gap-4">
+              <div className="grid grid-cols-3 gap-3">
                 <Button
                   onClick={restartQuiz}
-                  className="flex-1 h-12 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
+                  className="h-12 bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
                 >
                   <RotateCcw className="w-4 h-4 mr-2" />
                   Retake Quiz
                 </Button>
-                <Button onClick={onBack} variant="outline" className="flex-1 h-12 border-2 bg-transparent">
+                <Button 
+                  onClick={onBack} 
+                  variant="outline" 
+                  className="h-12 border-2 bg-transparent"
+                >
                   <ArrowLeft className="w-4 h-4 mr-2" />
                   New Quiz
+                </Button>
+                <Button
+                  onClick={handleSaveQuiz}
+                  disabled={isSaving || isSaved}
+                  className="h-12 bg-gradient-to-r from-purple-500 to-purple-600 hover:from-purple-600 hover:to-purple-700"
+                >
+                  {isSaving ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Saving...
+                    </>
+                  ) : isSaved ? (
+                    <>
+                      <CheckCircle className="w-4 h-4 mr-2" />
+                      Saved
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-4 h-4 mr-2" />
+                      Save Quiz
+                    </>
+                  )}
                 </Button>
               </div>
             </CardContent>

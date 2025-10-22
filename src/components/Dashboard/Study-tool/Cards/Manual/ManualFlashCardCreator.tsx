@@ -42,7 +42,11 @@ interface FileWithMetadata {
   documentId?: string;
 }
 
-const ManualFlashCardCreator: React.FC = () => {
+interface ManualFlashCardCreatorProps {
+  onFlashcardsCreated?: (flashcards: any[], projectInfo: { name: string; id: string }) => void;
+}
+
+const ManualFlashCardCreator: React.FC<ManualFlashCardCreatorProps> = ({ onFlashcardsCreated }) => {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [projectName, setProjectName] = useState<string>('');
   const [category, setCategory] = useState<string>('');
@@ -111,7 +115,6 @@ const ManualFlashCardCreator: React.FC = () => {
     
     setFiles(prevFiles => [...prevFiles, ...newFiles]);
 
-    // Upload files immediately to get document IDs
     setIsUploadingFiles(true);
     try {
       const uploadedFiles: FileWithMetadata[] = [];
@@ -130,7 +133,6 @@ const ManualFlashCardCreator: React.FC = () => {
         }
       }
 
-      // Update files with document IDs
       setFiles(prevFiles => {
         const updatedFiles = [...prevFiles];
         newFiles.forEach((newFile, index) => {
@@ -198,7 +200,27 @@ const ManualFlashCardCreator: React.FC = () => {
         .filter(f => f.documentId)
         .map(f => f.documentId);
 
-      console.log(`🤖 Generating AI answer for question with ${documentIds.length} document(s)...`);
+      // ===== ONLY ADDITION: Extract documents EXACTLY like flashcard page =====
+      if (documentIds.length > 0) {
+        console.log("📝 Ensuring documents have extracted text...");
+        
+        const extractResponse = await fetch("/api/documents/extract-selected", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ documentIds }),
+        });
+
+        const extractData = await extractResponse.json();
+
+        if (!extractResponse.ok) {
+          console.error("Failed to extract documents:", extractData.error);
+        } else {
+          console.log("✅ Document extraction completed:", extractData.message);
+        }
+      }
+      // ===== END OF ONLY ADDITION =====
 
       const response = await fetch('/api/flashcards/generate-answer', {
         method: 'POST',
@@ -214,7 +236,6 @@ const ManualFlashCardCreator: React.FC = () => {
       });
       
       const data = await response.json();
-      console.log('📥 Answer generation response:', data);
       
       if (data.success && data.answer) {
         setCurrentAnswer(data.answer);
@@ -242,7 +263,7 @@ const ManualFlashCardCreator: React.FC = () => {
         throw new Error(data.error || 'Failed to generate answer');
       }
     } catch (error) {
-      console.error('❌ Error generating AI answer:', error);
+      console.error('Error generating AI answer:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       setCurrentAnswer(`Failed to generate answer: ${errorMessage}`);
       toast({
@@ -356,19 +377,40 @@ const ManualFlashCardCreator: React.FC = () => {
           description: data.message,
         });
 
-        // Reset form
-        setProjectName('');
-        setCategory('');
-        setStudyGoal('');
-        setFiles([]);
-        setFlashcards([]);
-        setCurrentQuestion('');
-        setCurrentAnswer('');
-        setAiAnswerSource('');
+        // Transform flashcards to match the expected format (use the ones we created)
+        const transformedFlashcards = flashcards.map((card, index) => ({
+          id: data.flashcardIds?.[index] || `temp-${index}`, // Use returned IDs if available
+          question: card.question,
+          answer: card.answer,
+          difficulty: (card.difficulty as "easy" | "medium" | "hard") || 'medium',
+          subject: category || 'General',
+          mastered: false,
+          review_count: 0,
+          last_reviewed: undefined
+        }));
+
+        // Close modal first
         setIsCreateModalOpen(false);
 
-        // Optional: Redirect to flashcards page
-        // router.push('/dashboard/flash-cards-cards');
+        // Call the callback to show FlashcardsStudy immediately
+        if (onFlashcardsCreated) {
+          onFlashcardsCreated(transformedFlashcards, {
+            name: projectName,
+            id: data.flashcardSetId || 'manual-set'
+          });
+        }
+
+        // Reset form after a short delay
+        setTimeout(() => {
+          setProjectName('');
+          setCategory('');
+          setStudyGoal('');
+          setFiles([]);
+          setFlashcards([]);
+          setCurrentQuestion('');
+          setCurrentAnswer('');
+          setAiAnswerSource('');
+        }, 300);
       } else {
         throw new Error(data.error || 'Failed to create flashcard deck');
       }
@@ -385,87 +427,81 @@ const ManualFlashCardCreator: React.FC = () => {
     }
   };
 
-  const handleFileChange = (e: ChangeEvent<HTMLInputElement>): void => {
-    if (e.target.files) {
-      handleFileUpload(e.target.files);
-    }
-  };
-
   return (
     <div>
       <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
         <DialogTrigger asChild>
-          <Button onClick={() => setIsCreateModalOpen(true)} className="gap-2 bg-primary hover:bg-primary/90">
-            <BookOpen className="w-4 h-4" />
-            Create Flashcards
+          <Button variant="outline" className="gap-2">
+            <Plus className="w-4 h-4" />
+            Create Manual Flashcards
           </Button>
         </DialogTrigger>
-        <DialogContent className="sm:max-w-[1000px] max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Create Manual Flashcards</DialogTitle>
+            <DialogTitle className="flex items-center gap-2">
+              <Edit3 className="w-5 h-5" />
+              Create Manual Flashcard Deck
+            </DialogTitle>
             <DialogDescription>
-              Create your own flashcards with optional AI assistance from your uploaded materials.
+              Build your flashcard deck by adding questions manually or with AI assistance
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="p-4 space-y-6">
+
+          <div className="space-y-6 pt-4">
             {/* Project Setup */}
             <Card>
               <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Sparkles className="w-5 h-5" />
-                  Flashcard Deck Setup
-                </CardTitle>
-                <CardDescription>Basic information about your flashcard deck.</CardDescription>
+                <CardTitle>Deck Information</CardTitle>
+                <CardDescription>Set up your flashcard deck details</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
+                <div>
+                  <Label htmlFor="project-name">
+                    Deck Name <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    id="project-name"
+                    placeholder="e.g., Biology Final Exam"
+                    value={projectName}
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => setProjectName(e.target.value)}
+                  />
+                </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="projectName">
-                      Deck Name <span className="text-red-500">*</span>
-                    </Label>
-                    <Input
-                      id="projectName"
-                      placeholder="e.g., JavaScript Fundamentals"
-                      value={projectName}
-                      onChange={(e: ChangeEvent<HTMLInputElement>) => setProjectName(e.target.value)}
-                    />
-                  </div>
                   <div>
                     <Label htmlFor="category">Category</Label>
                     <Select value={category} onValueChange={setCategory}>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select a category" />
+                        <SelectValue placeholder="Select category" />
                       </SelectTrigger>
                       <SelectContent>
-                        {categories.map(cat => (
-                          <SelectItem key={cat} value={cat.toLowerCase().replace(' ', '_')}>
+                        {categories.map((cat) => (
+                          <SelectItem key={cat} value={cat}>
                             {cat}
                           </SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                </div>
-                <div>
-                  <Label htmlFor="goal">Study Goal</Label>
-                  <Select value={studyGoal} onValueChange={setStudyGoal}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="What's your study goal?" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {studyGoals.map(goal => (
-                        <SelectItem key={goal} value={goal.toLowerCase().replace(' ', '_')}>
-                          {goal}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <div>
+                    <Label htmlFor="study-goal">Study Goal</Label>
+                    <Select value={studyGoal} onValueChange={setStudyGoal}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select study goal" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {studyGoals.map((goal) => (
+                          <SelectItem key={goal} value={goal}>
+                            {goal}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </CardContent>
             </Card>
 
-            {/* File Upload */}
+            {/* Reference Materials (Optional) */}
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
@@ -476,59 +512,82 @@ const ManualFlashCardCreator: React.FC = () => {
                   Upload documents for AI-powered answers based on your materials.
                 </CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="border-2 border-dashed rounded-lg p-6 text-center transition-colors hover:border-primary/50">
-                  <Upload className="w-10 h-10 text-gray-400 mx-auto mb-3" />
-                  <h3 className="text-md font-medium text-gray-900 dark:text-white mb-2">
-                    Drop your reference files here
-                  </h3>
-                  <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">
-                    PDF, DOCX, PPTX, Images supported
-                  </p>
-                  <input
-                    type="file"
-                    multiple
-                    accept=".pdf,.docx,.pptx,.jpg,.jpeg,.png,.gif,.webp"
-                    onChange={handleFileChange}
-                    className="hidden"
+              <CardContent className="space-y-4">
+                <div 
+                  className="border-2 border-dashed rounded-lg p-8 text-center hover:border-blue-400 transition-colors cursor-pointer relative"
+                  onClick={() => document.getElementById('file-upload')?.click()}
+                >
+                  <div className="flex flex-col items-center gap-3">
+                    <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-full">
+                      <Upload className="w-8 h-8 text-blue-500" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100">
+                        Drop your reference files here
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                        PDF, DOCX, PPTX, Images supported
+                      </p>
+                    </div>
+                    <Button 
+                      variant="outline" 
+                      size="sm"
+                      className="gap-2"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        document.getElementById('file-upload')?.click();
+                      }}
+                      disabled={isUploadingFiles}
+                    >
+                      {isUploadingFiles ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          Uploading...
+                        </>
+                      ) : (
+                        <>
+                          <Upload className="w-4 h-4" />
+                          Browse Files
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                  <Input
                     id="file-upload"
+                    type="file"
+                    className="hidden"
+                    accept=".pdf,.doc,.docx,.ppt,.pptx,.jpg,.jpeg,.png"
+                    multiple
+                    onChange={(e: ChangeEvent<HTMLInputElement>) => {
+                      if (e.target.files) {
+                        handleFileUpload(e.target.files);
+                      }
+                    }}
                     disabled={isUploadingFiles}
                   />
-                  <label htmlFor="file-upload">
-                    <Button asChild variant="outline" disabled={isUploadingFiles}>
-                      <span className="cursor-pointer">
-                        {isUploadingFiles ? (
-                          <>
-                            <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            Uploading...
-                          </>
-                        ) : (
-                          'Browse Files'
-                        )}
-                      </span>
-                    </Button>
-                  </label>
                 </div>
 
                 {files.length > 0 && (
-                  <div className="mt-4 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-sm font-medium">Uploaded Files ({files.length})</h4>
-                      <Button variant="ghost" size="sm" onClick={() => setFiles([])}>
-                        Clear All
-                      </Button>
-                    </div>
-                    <div className="space-y-2 max-h-32 overflow-y-auto">
+                  <div className="space-y-2">
+                    <Label className="text-sm font-medium">Uploaded Files ({files.length})</Label>
+                    <div className="space-y-2">
                       {files.map((fileItem, index) => (
-                        <div key={index} className="flex items-center gap-3 p-2 border rounded-md">
-                          {getFileIcon(fileItem.type)}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium truncate">{fileItem.name}</p>
-                            <div className="flex items-center gap-2">
-                              <p className="text-xs text-gray-500">{formatFileSize(fileItem.size)}</p>
-                              {fileItem.documentId && (
-                                <CheckCircle className="w-3 h-3 text-green-500" />
-                              )}
+                        <div 
+                          key={index} 
+                          className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700"
+                        >
+                          <div className="flex items-center gap-3 flex-1 min-w-0">
+                            {getFileIcon(fileItem.type)}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-medium truncate text-gray-900 dark:text-gray-100">
+                                {fileItem.name}
+                              </p>
+                              <div className="flex items-center gap-2">
+                                <p className="text-xs text-gray-500">{formatFileSize(fileItem.size)}</p>
+                                {fileItem.documentId && (
+                                  <CheckCircle className="w-3 h-3 text-green-500" />
+                                )}
+                              </div>
                             </div>
                           </div>
                           <Button variant="ghost" size="sm" onClick={() => removeFile(index)}>
@@ -552,7 +611,6 @@ const ManualFlashCardCreator: React.FC = () => {
                 <CardDescription>Add questions and create answers manually or with AI.</CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
-                {/* Answer Mode Selection */}
                 <div>
                   <Label className="text-sm font-medium">Answer Creation Mode</Label>
                   <div className="flex gap-2 mt-2">
@@ -725,7 +783,7 @@ const ManualFlashCardCreator: React.FC = () => {
                 ) : (
                   <>
                     <BookOpen className="w-4 h-4" />
-                    Create Flashcard Deck
+                    Create & Study Now
                   </>
                 )}
               </Button>

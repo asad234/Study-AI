@@ -1,12 +1,23 @@
 "use client"
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Eye, HelpCircle, ArrowRight, Clock, Trophy } from "lucide-react";
-import UnderDevelopmentBanner from '@/components/common/underDevelopment';
+import { 
+  Eye, 
+  HelpCircle, 
+  ArrowRight, 
+  Clock, 
+  Trophy, 
+  RefreshCw, 
+  Loader2, 
+  Trash2,
+  AlertTriangle 
+} from "lucide-react";
+import { useRouter } from "next/navigation";
+import { toast } from "@/components/ui/use-toast";
 
 interface Quiz {
   id: string;
@@ -17,85 +28,123 @@ interface Quiz {
   difficulty?: string;
   timeLimit?: number;
   lastScore?: number;
-  isAIGenerated?: boolean; // Indicates if the quiz is AI-generated
+  isAIGenerated?: boolean;
+  subject?: string;
+  description?: string;
 }
 
 interface PreviewQuizzesProps {
-  quizzes?: Quiz[];
   buttonText?: string;
   className?: string;
 }
 
 const PreviewQuizzes: React.FC<PreviewQuizzesProps> = ({ 
-  quizzes, 
   buttonText = "Preview Quizzes",
   className = ""
 }) => {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [quizSets, setQuizSets] = useState<Quiz[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState<string | null>(null);
+  
+  // Delete confirmation dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [quizToDelete, setQuizToDelete] = useState<Quiz | null>(null);
+  
+  const router = useRouter();
 
-  // Mock data for demonstration
-  const mockQuizzes: Quiz[] = [
-    { 
-      id: '1', 
-      name: 'Spanish Grammar Quiz', 
-      questionCount: 20, 
-      status: 'active', 
-      createdAt: '2024-01-15',
-      difficulty: 'Medium',
-      timeLimit: 15,
-      lastScore: 85,
-      isAIGenerated: false
-    },
-    { 
-      id: '2', 
-      name: 'Advanced Math Problems', 
-      questionCount: 15, 
-      status: 'completed', 
-      createdAt: '2024-01-12',
-      difficulty: 'Hard',
-      timeLimit: 30,
-      lastScore: 92,
-      isAIGenerated: true
-    },
-    { 
-      id: '3', 
-      name: 'World History Quiz', 
-      questionCount: 25, 
-      status: 'active', 
-      createdAt: '2024-01-10',
-      difficulty: 'Easy',
-      timeLimit: 20,
-      lastScore: 78,
-      isAIGenerated: false
-    },
-    { 
-      id: '4', 
-      name: 'Science Fundamentals', 
-      questionCount: 18, 
-      status: 'draft', 
-      createdAt: '2024-01-08',
-      difficulty: 'Medium',
-      timeLimit: 25,
-      isAIGenerated: true
-    },
-    { 
-      id: '5', 
-      name: 'Programming Logic', 
-      questionCount: 12, 
-      status: 'active', 
-      createdAt: '2024-01-05',
-      difficulty: 'Hard',
-      timeLimit: 40,
-      lastScore: 95,
-      isAIGenerated: true
-    },
-  ];
+  const fetchQuizSets = async () => {
+    setLoading(true);
+    try {
+      const response = await fetch('/api/quiz-sets');
+      const data = await response.json();
 
-  const displayQuizzes = quizzes && quizzes.length > 0 ? quizzes : mockQuizzes;
+      if (data.success) {
+        setQuizSets(data.quizSets);
+      } else {
+        toast({
+          title: "Error",
+          description: data.error || "Failed to fetch quiz sets",
+          variant: "destructive",
+        });
+      }
+    } catch (error) {
+      console.error("Error fetching quiz sets:", error);
+      toast({
+        title: "Error",
+        description: "Failed to load quiz sets",
+        variant: "destructive",
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (isDialogOpen) {
+      fetchQuizSets();
+    }
+  }, [isDialogOpen]);
+
+  const handleOpenDialog = () => {
+    setIsDialogOpen(true);
+  };
+
+  const handleCloseDialog = () => {
+    setIsDialogOpen(false);
+  };
 
   const handleTakeQuiz = (quizId: string) => {
-    console.log(`Take quiz: ${quizId}`);
-    // Add navigation logic here later
+    // Navigate to quiz study page
+    router.push(`/dashboard/quiz/study/${quizId}`);
+  };
+
+  const handleDeleteClick = (quiz: Quiz, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setQuizToDelete(quiz);
+    setDeleteDialogOpen(true);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!quizToDelete) return;
+
+    setDeleteLoading(quizToDelete.id);
+    
+    try {
+      const response = await fetch(`/api/quiz-sets/${quizToDelete.id}`, {
+        method: 'DELETE',
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setQuizSets(prev => prev.filter(quiz => quiz.id !== quizToDelete.id));
+        
+        toast({
+          title: "Success",
+          description: `"${quizToDelete.name}" has been deleted`,
+        });
+        
+        setDeleteDialogOpen(false);
+        setQuizToDelete(null);
+      } else {
+        throw new Error(data.error || 'Failed to delete quiz set');
+      }
+    } catch (error) {
+      console.error("Error deleting quiz set:", error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete quiz set",
+        variant: "destructive",
+      });
+    } finally {
+      setDeleteLoading(null);
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setDeleteDialogOpen(false);
+    setQuizToDelete(null);
   };
 
   const formatDate = (dateString: string) => {
@@ -122,11 +171,11 @@ const PreviewQuizzes: React.FC<PreviewQuizzesProps> = ({
 
   const getDifficultyColor = (difficulty: string) => {
     switch (difficulty) {
-      case 'Easy':
+      case 'easy':
         return 'bg-green-100 text-green-800 border-green-200';
-      case 'Medium':
+      case 'medium':
         return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'Hard':
+      case 'hard':
         return 'bg-red-100 text-red-800 border-red-200';
       default:
         return 'bg-gray-100 text-gray-800 border-gray-200';
@@ -141,9 +190,8 @@ const PreviewQuizzes: React.FC<PreviewQuizzesProps> = ({
 
   return (
     <>
-      {/* Button that triggers the dialog */}
       <Button
-        onClick={() => setIsDialogOpen(true)}
+        onClick={handleOpenDialog}
         variant="outline"
         className={`gap-2 hover:bg-purple-50 hover:border-purple-300 ${className}`}
       >
@@ -151,51 +199,80 @@ const PreviewQuizzes: React.FC<PreviewQuizzesProps> = ({
         {buttonText}
       </Button>
 
-      {/* Dialog */}
+      {/* Main Dialog */}
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-4xl max-h-[80vh] flex flex-col">
           <DialogHeader>
-            <UnderDevelopmentBanner/>
-            <DialogTitle className="flex items-center gap-2">
-              <HelpCircle className="w-5 h-5" />
-              Preview Quizzes
-            </DialogTitle>
-            <DialogDescription>
-              View and take all your created quiz sets.
-            </DialogDescription>
+            <div className="flex items-center justify-between">
+              <div>
+                <DialogTitle className="flex items-center gap-2">
+                  <HelpCircle className="w-5 h-5" />
+                  Your Quiz Sets
+                </DialogTitle>
+                <DialogDescription>
+                  View, retake, and manage all your saved quizzes.
+                </DialogDescription>
+              </div>
+              <Button
+                onClick={fetchQuizSets}
+                variant="ghost"
+                size="sm"
+                disabled={loading}
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </Button>
+            </div>
           </DialogHeader>
 
-          {/* Scrollable area */}
           <div className="flex-1 overflow-y-auto p-1">
-            {displayQuizzes.length === 0 ? (
+            {loading ? (
+              <div className="flex items-center justify-center py-12">
+                <Loader2 className="w-8 h-8 animate-spin text-purple-500" />
+              </div>
+            ) : quizSets.length === 0 ? (
               <div className="text-center py-12">
                 <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                   <HelpCircle className="w-8 h-8 text-gray-400" />
                 </div>
                 <h3 className="text-lg font-medium text-gray-600 mb-2">
-                  No Quizzes Yet
+                  No Saved Quizzes Yet
                 </h3>
                 <p className="text-gray-500">
-                  Create your first quiz to see it here.
+                  Complete a quiz and save it to see it here.
                 </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {displayQuizzes.map((quiz) => (
+                {quizSets.map((quiz) => (
                   <Card 
                     key={quiz.id} 
-                    className="hover:shadow-md transition-shadow duration-200 border-2 hover:border-purple-200"
+                    className="hover:shadow-md transition-shadow duration-200 border-2 hover:border-purple-200 relative group"
                   >
                     <CardHeader className="pb-3">
                       <div className="flex items-start justify-between">
                         <CardTitle className="text-lg line-clamp-2 flex-1 mr-2">
                           {quiz.name}
                         </CardTitle>
-                        {quiz.status && (
-                          <Badge variant={getStatusColor(quiz.status)} className="text-xs">
-                            {quiz.status}
-                          </Badge>
-                        )}
+                        <div className="flex items-center gap-2">
+                          {quiz.status && (
+                            <Badge variant={getStatusColor(quiz.status)} className="text-xs shrink-0">
+                              {quiz.status}
+                            </Badge>
+                          )}
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-8 w-8 text-red-500 hover:text-red-700 hover:bg-red-50 opacity-0 group-hover:opacity-100 transition-opacity"
+                            onClick={(e) => handleDeleteClick(quiz, e)}
+                            disabled={deleteLoading === quiz.id}
+                          >
+                            {deleteLoading === quiz.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="w-4 h-4" />
+                            )}
+                          </Button>
+                        </div>
                       </div>
                     </CardHeader>
                     
@@ -246,7 +323,8 @@ const PreviewQuizzes: React.FC<PreviewQuizzesProps> = ({
                             variant={quiz.isAIGenerated ? 'secondary' : 'outline'} 
                             className={`text-xs ${quiz.isAIGenerated ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-600'}`}
                           >
-                            {quiz.isAIGenerated ? 'AI Generated Quiz' : 'Custom Made'}
+                            {/* 
+                            {quiz.isAIGenerated ? 'AI Generated Quiz' : 'Custom Made'}*/}
                           </Badge>
                         </div>
                         
@@ -256,7 +334,7 @@ const PreviewQuizzes: React.FC<PreviewQuizzesProps> = ({
                           size="sm"
                           disabled={quiz.status === 'draft'}
                         >
-                          {quiz.status === 'draft' ? 'Coming Soon' : 'Take Quiz'}
+                          {quiz.status === 'draft' ? 'Coming Soon' : 'Retake Quiz'}
                           {quiz.status !== 'draft' && <ArrowRight className="w-4 h-4" />}
                         </Button>
                       </div>
@@ -267,15 +345,69 @@ const PreviewQuizzes: React.FC<PreviewQuizzesProps> = ({
             )}
           </div>
 
-          {/* Footer */}
           <div className="flex justify-end pt-4 border-t">
             <Button
-              onClick={() => setIsDialogOpen(false)}
+              onClick={handleCloseDialog}
               variant="outline"
             >
               Close
             </Button>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <div className="flex items-center gap-3">
+              <div className="w-12 h-12 rounded-full bg-red-100 flex items-center justify-center">
+                <AlertTriangle className="w-6 h-6 text-red-600" />
+              </div>
+              <div>
+                <DialogTitle>Delete Quiz Set</DialogTitle>
+                <DialogDescription>
+                  This action cannot be undone.
+                </DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          
+          <div className="py-4">
+            <p className="text-sm text-gray-600">
+              Are you sure you want to delete <span className="font-semibold">"{quizToDelete?.name}"</span>?
+            </p>
+            <p className="text-sm text-gray-500 mt-2">
+              This will permanently delete the quiz with {quizToDelete?.questionCount || 0} question(s) and your score of {quizToDelete?.lastScore || 0}%.
+            </p>
+          </div>
+
+          <DialogFooter className="flex gap-2 sm:gap-0">
+            <Button
+              variant="outline"
+              onClick={handleCancelDelete}
+              disabled={deleteLoading !== null}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDelete}
+              disabled={deleteLoading !== null}
+            >
+              {deleteLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting...
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete Quiz
+                </>
+              )}
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </>

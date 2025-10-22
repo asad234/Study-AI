@@ -22,6 +22,7 @@ import { ExamAttempts } from "@/collections/Exams/exam-attempts"
 import { Media } from "@/collections/Media"
 import Projects from "@/collections/projects/route"
 import { FlashcardSets } from "@/collections/FlashcardSets"
+import { QuizSets } from "@/collections/Quizsets"
 
 const filename = fileURLToPath(import.meta.url)
 const dirname = path.dirname(filename)
@@ -63,6 +64,7 @@ export default buildConfig({
     Flashcards,
     FlashcardSets,
     QuizAttempts,
+    QuizSets,
     Exams,
     ExamQuestions,
     ExamAttempts,
