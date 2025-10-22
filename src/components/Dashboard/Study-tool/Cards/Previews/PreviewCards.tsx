@@ -16,7 +16,6 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/use-toast";
-import UnderDevelopmentBanner from '@/components/common/underDevelopment';
 
 interface FlashCardSet {
   id: string;
@@ -183,7 +182,6 @@ const PreviewCards: React.FC<PreviewCardsProps> = ({
       <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
         <DialogContent className="sm:max-w-4xl max-h-[80vh] overflow-hidden">
           <DialogHeader>
-            <UnderDevelopmentBanner/>
             <div className="flex items-center justify-between">
               <div>
                 <DialogTitle className="flex items-center gap-2">

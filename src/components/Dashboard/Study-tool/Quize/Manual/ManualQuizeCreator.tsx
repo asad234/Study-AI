@@ -381,7 +381,7 @@ const ManualQuizCreator: React.FC = () => {
     <div>
       <Dialog open={isCreateModalOpen} onOpenChange={setIsCreateModalOpen}>
         <DialogTrigger asChild>
-          <Button onClick={() => setIsCreateModalOpen(true)} className="gap-2 bg-primary hover:bg-primary/90">
+          <Button onClick={() => setIsCreateModalOpen(true)} className="gap-2 bg-primary hover:bg-primary/90 ">
             <BookOpen className="w-4 h-4" />
             Create Custom Quiz
           </Button>
