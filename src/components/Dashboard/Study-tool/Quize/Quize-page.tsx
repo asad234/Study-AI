@@ -324,7 +324,7 @@ export default function QuizProjectsPage() {
           </div>
           <div className="flex gap-3">
             <PreviewQuizzes className="bg-white text-black dark:bg-gray-900 dark:text-white border-black dark:border-white dark:hover:bg-slate-500 hover:bg-slate-300" />
-            <ManualQuizCreator className="bg-white text-black dark:bg-gray-900 dark:text-white border-black dark:border-white dark:hover:bg-slate-500 hover:bg-slate-300"/>
+            <ManualQuizCreator />
           </div>
         </div>
 

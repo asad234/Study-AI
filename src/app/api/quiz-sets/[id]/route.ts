@@ -1,5 +1,4 @@
-// Copy this ENTIRE file to: app/api/quiz-sets/[id]/route.ts
-// This fixes the 405 error by adding the GET endpoint
+// app/api/quiz-sets/[id]/route.ts
 
 import { NextResponse } from "next/server"
 import { getServerSession } from "next-auth/next"
@@ -10,7 +9,7 @@ import config from "@payload-config"
 // GET /api/quiz-sets/[id] - Fetch a specific quiz set
 export async function GET(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -22,7 +21,8 @@ export async function GET(
       )
     }
 
-    const { id } = params
+    // Await params before accessing properties (Next.js 15)
+    const { id } = await params
 
     if (!id) {
       return NextResponse.json(
@@ -108,7 +108,7 @@ export async function GET(
 // DELETE /api/quiz-sets/[id] - Delete a specific quiz set
 export async function DELETE(
   request: Request,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
     const session = await getServerSession(authOptions)
@@ -120,7 +120,8 @@ export async function DELETE(
       )
     }
 
-    const { id } = params
+    // Await params before accessing properties (Next.js 15)
+    const { id } = await params
 
     if (!id) {
       return NextResponse.json(
@@ -166,8 +167,8 @@ export async function DELETE(
 
     // Delete the quiz set
     await payload.delete({
-      collection: "quiz-sets",
-      id,
+      collection: "quiz_sets",
+      id, 
     })
 
     console.log("✅ Successfully deleted quiz set:", id)

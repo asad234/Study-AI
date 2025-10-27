@@ -4,16 +4,15 @@ import { authOptions } from "@/lib/authoption"
 import { getPayload } from "payload"
 import config from "@payload-config"
 
-// GET /api/quiz-sets - Fetch all quiz sets for the current user
+export const runtime = "nodejs"
+
+// GET - Fetch all quiz sets for the current user
 export async function GET(request: Request) {
   try {
     const session = await getServerSession(authOptions)
 
     if (!session?.user?.email) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      )
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
     }
 
     const payload = await getPayload({ config })
@@ -26,20 +25,15 @@ export async function GET(request: Request) {
     })
 
     if (!profiles.docs.length) {
-      return NextResponse.json(
-        { success: false, error: "User profile not found" },
-        { status: 404 }
-      )
+      return NextResponse.json({ success: false, error: "User profile not found" }, { status: 404 })
     }
 
     const userId = profiles.docs[0].id
 
-    // Fetch quiz sets for this user
+    // Fetch all quiz sets for this user
     const quizSets = await payload.find({
       collection: "quiz_sets",
-      where: {
-        user: { equals: userId },
-      },
+      where: { user: { equals: userId } },
       sort: "-createdAt",
       limit: 100,
     })
@@ -63,30 +57,26 @@ export async function GET(request: Request) {
       quizSets: formattedSets,
     })
   } catch (error) {
-    console.error("Error fetching quiz sets:", error)
+    console.error("❌ Error fetching quiz sets:", error)
     return NextResponse.json(
-      { success: false, error: "Failed to fetch quiz sets" },
-      { status: 500 }
+      { success: false, error: error instanceof Error ? error.message : "Failed to fetch quiz sets" },
+      { status: 500 },
     )
   }
 }
 
-// POST /api/quiz-sets - Save a quiz with results
+// POST - Save/update a quiz set with score after completion
 export async function POST(request: Request) {
   try {
     const session = await getServerSession(authOptions)
 
     if (!session?.user?.email) {
-      return NextResponse.json(
-        { success: false, error: "Unauthorized" },
-        { status: 401 }
-      )
+      return NextResponse.json({ success: false, error: "Unauthorized" }, { status: 401 })
     }
 
-    const body = await request.json()
-    const { 
-      name, 
-      questions, 
+    const {
+      name,
+      questions,
       questionCount,
       difficulty,
       timeLimit,
@@ -94,30 +84,15 @@ export async function POST(request: Request) {
       isAIGenerated,
       subject,
       description,
-      quizResults 
-    } = body
+      quizResults,
+    } = await request.json()
 
-    console.log("📝 Saving quiz set:", {
+    console.log("💾 Saving quiz set with score:", {
       name,
       questionCount,
+      lastScore,
       isAIGenerated,
-      lastScore
     })
-
-    // Validation
-    if (!name) {
-      return NextResponse.json(
-        { success: false, error: "Quiz name is required" },
-        { status: 400 }
-      )
-    }
-
-    if (!questions || questions.length === 0) {
-      return NextResponse.json(
-        { success: false, error: "At least one question is required" },
-        { status: 400 }
-      )
-    }
 
     const payload = await getPayload({ config })
 
@@ -129,83 +104,95 @@ export async function POST(request: Request) {
     })
 
     if (!profiles.docs.length) {
-      return NextResponse.json(
-        { success: false, error: "User profile not found" },
-        { status: 404 }
-      )
+      return NextResponse.json({ success: false, error: "User profile not found" }, { status: 404 })
     }
 
     const userId = profiles.docs[0].id
 
-    // Build quiz set data
-    const quizSetData: any = {
-      name,
-      questionCount: questionCount || questions.length,
-      status: "completed",
-      user: userId,
-      questions: questions, // Store questions as JSON
-      lastScore: lastScore || 0,
-      isAIGenerated: isAIGenerated || false,
-      difficulty: difficulty || "medium",
-    }
-
-    // Add optional fields
-    if (timeLimit) {
-      quizSetData.timeLimit = timeLimit
-    }
-
-    if (subject && subject.trim()) {
-      quizSetData.subject = subject.trim()
-    }
-
-    if (description && description.trim()) {
-      quizSetData.description = description.trim()
-    }
-
-    // Store quiz results if provided
-    if (quizResults && Array.isArray(quizResults)) {
-      quizSetData.quizResults = quizResults
-    }
-
-    console.log("📦 Final quiz set data:", {
-      ...quizSetData,
-      questions: `[${quizSetData.questions.length} questions]`,
-    })
-
-    // Create the quiz set
-    const newSet = await payload.create({
+    // Check if a quiz set with this name already exists for this user
+    const existingQuizSets = await payload.find({
       collection: "quiz_sets",
-      data: quizSetData,
+      where: {
+        and: [{ user: { equals: userId } }, { name: { equals: name.trim() } }],
+      },
+      limit: 1,
     })
 
-    console.log("✅ Successfully created quiz set:", newSet.id)
+    let quizSet
+
+    if (existingQuizSets.docs.length > 0) {
+      // Update existing quiz set with new score
+      const existingQuizSet = existingQuizSets.docs[0]
+
+      console.log(`📝 Updating existing quiz set: ${existingQuizSet.id}`)
+
+      quizSet = await payload.update({
+        collection: "quiz_sets",
+        id: existingQuizSet.id,
+        data: {
+          lastScore: lastScore,
+          status: "completed",
+          // Optionally update other fields if needed
+          ...(quizResults && { quizResults }),
+        },
+      })
+
+      console.log(`✅ Updated quiz set ${quizSet.id} with score: ${lastScore}`)
+    } else {
+      // Create new quiz set
+      console.log("📚 Creating new quiz set...")
+
+      const quizSetData: any = {
+        name: name.trim(),
+        status: "completed",
+        user: userId,
+        questions: questions,
+        questionCount: questionCount || questions.length,
+        isAIGenerated: isAIGenerated || false,
+        difficulty: difficulty || "medium",
+        lastScore: lastScore,
+      }
+
+      if (subject && subject.trim()) {
+        quizSetData.subject = subject.trim()
+      }
+
+      if (description && description.trim()) {
+        quizSetData.description = description.trim()
+      }
+
+      if (timeLimit) {
+        quizSetData.timeLimit = timeLimit
+      }
+
+      if (quizResults) {
+        quizSetData.quizResults = quizResults
+      }
+
+      quizSet = await payload.create({
+        collection: "quiz_sets",
+        data: quizSetData,
+      })
+
+      console.log(`✅ Created new quiz set: ${quizSet.id}`)
+    }
 
     return NextResponse.json({
       success: true,
       quizSet: {
-        id: newSet.id,
-        name: newSet.name,
-        questionCount: newSet.questionCount,
-        lastScore: newSet.lastScore,
-        isAIGenerated: newSet.isAIGenerated,
+        id: quizSet.id,
+        name: quizSet.name,
+        questionCount: quizSet.questionCount,
+        lastScore: quizSet.lastScore,
+        isAIGenerated: quizSet.isAIGenerated,
       },
-      message: `Successfully saved quiz "${name}" with ${questionCount} question(s)`,
+      message: `Successfully saved "${name}" with score: ${lastScore}`,
     })
   } catch (error) {
     console.error("❌ Error saving quiz set:", error)
-    
-    let errorMessage = "Failed to save quiz set"
-    
-    if (error instanceof Error) {
-      errorMessage = error.message
-    }
-    
-    return NextResponse.json(
-      { 
-        success: false, 
-        error: errorMessage,
-      },
-      { status: 500 }
-    )
+
+    const errorMessage = error instanceof Error ? error.message : "Failed to save quiz set"
+
+    return NextResponse.json({ success: false, error: errorMessage }, { status: 500 })
   }
 }
