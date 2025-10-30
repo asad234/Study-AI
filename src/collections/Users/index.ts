@@ -143,6 +143,16 @@ export const Users: CollectionConfig = {
         },
       },
     },
+    // Chat limit tracking
+    {
+      name: "chatCount",
+      type: "number",
+      defaultValue: 0,
+      admin: {
+        position: "sidebar",
+        description: "Number of chats used (for free plan limit tracking)",
+      },
+    },
     // Usage tracking fields
     {
       name: "usageStats",
@@ -226,6 +236,11 @@ export const Users: CollectionConfig = {
         // Initialize plan for new users
         if (operation === "create" && !data.plan) {
           data.plan = "free_trial"
+        }
+
+        // Initialize chatCount for new users
+        if (operation === "create" && data.chatCount === undefined) {
+          data.chatCount = 0
         }
 
         return data

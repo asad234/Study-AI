@@ -10,8 +10,10 @@ import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import { Send, Bot, User, FileText, MessageSquare, ChevronDown, Lightbulb, ChevronUp, Loader2 } from "lucide-react"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Send, Bot, User, FileText, MessageSquare, ChevronDown, Lightbulb, ChevronUp, Loader2, Crown, AlertCircle } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { useRouter } from "next/navigation"
 
 interface Message {
   id: string
@@ -45,6 +47,12 @@ interface SuggestedQuestion {
   question: string
   category: string
   difficulty: string
+}
+
+interface ChatLimitInfo {
+  isPro: boolean
+  remainingChats: number
+  chatLimit: number
 }
 
 const parseStructuredResponse = (text: string) => {
@@ -96,6 +104,7 @@ const parseStructuredResponse = (text: string) => {
 
 export default function AIChatPage() {
   const { toast } = useToast()
+  const router = useRouter()
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   const [messages, setMessages] = useState<Message[]>([
@@ -112,6 +121,10 @@ export default function AIChatPage() {
   const [isExtracting, setIsExtracting] = useState(false)
   const [conversationId, setConversationId] = useState<string | null>(null)
 
+  // Chat limit state
+  const [chatLimitInfo, setChatLimitInfo] = useState<ChatLimitInfo | null>(null)
+  const [limitReached, setLimitReached] = useState(false)
+
   // Project and document selection
   const [projects, setProjects] = useState<Project[]>([])
   const [selectedProjects, setSelectedProjects] = useState<string[]>([])
@@ -124,6 +137,32 @@ export default function AIChatPage() {
   const [suggestedQuestions, setSuggestedQuestions] = useState<SuggestedQuestion[]>([])
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(true)
   const [showAllQuestions, setShowAllQuestions] = useState(false)
+
+  // Fetch chat limits on mount
+  useEffect(() => {
+    const fetchChatLimits = async () => {
+      try {
+        const response = await fetch("/api/chats/limit")
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success) {
+            if (!data.isPro) {
+              setChatLimitInfo({
+                isPro: data.isPro,
+                remainingChats: data.remainingChats,
+                chatLimit: data.chatLimit,
+              })
+              setLimitReached(data.limitReached)
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Failed to fetch chat limits:", error)
+      }
+    }
+
+    fetchChatLimits()
+  }, [])
 
   // Fetch projects
   useEffect(() => {
@@ -244,6 +283,10 @@ export default function AIChatPage() {
     setInputMessage(question)
   }
 
+  const handleUpgrade = () => {
+    router.push("/dashboard/payment")
+  }
+
   // Send message with extraction
   const handleSendMessage = async () => {
     if (!inputMessage.trim()) return
@@ -252,6 +295,16 @@ export default function AIChatPage() {
       toast({
         title: "No documents selected",
         description: "Please select at least one document to chat about",
+        variant: "destructive",
+      })
+      return
+    }
+
+    // Check if limit reached before sending
+    if (limitReached) {
+      toast({
+        title: "Chat limit reached",
+        description: "Upgrade to Pro for unlimited chats!",
         variant: "destructive",
       })
       return
@@ -324,6 +377,24 @@ export default function AIChatPage() {
 
       const data = await response.json()
 
+      // Handle chat limit reached
+      if (response.status === 403 && data.limitReached) {
+        setLimitReached(true)
+        toast({
+          title: "Chat Limit Reached",
+          description: data.message,
+          variant: "destructive",
+          action: (
+            <Button size="sm" onClick={handleUpgrade} className="bg-gradient-to-r from-purple-600 to-pink-600">
+              Upgrade to Pro
+            </Button>
+          ),
+        })
+        // Remove the user message that couldn't be sent
+        setMessages((prev) => prev.slice(0, -1))
+        return
+      }
+
       if (response.ok && data.success) {
         const structuredContent = parseStructuredResponse(data.message.content)
 
@@ -338,6 +409,20 @@ export default function AIChatPage() {
 
         setMessages((prev) => [...prev, aiMessage])
         setConversationId(data.conversationId)
+
+        // Update chat limit info for free users
+        if (data.metadata?.remainingChats !== undefined) {
+          setChatLimitInfo({
+            isPro: false,
+            remainingChats: data.metadata.remainingChats,
+            chatLimit: data.metadata.chatLimit,
+          })
+
+          // Check if they've reached the limit now
+          if (data.metadata.remainingChats === 0) {
+            setLimitReached(true)
+          }
+        }
 
         // Show warning if some documents failed in the chat API
         if (data.metadata?.failedDocuments > 0) {
@@ -386,6 +471,35 @@ export default function AIChatPage() {
             Ask questions about your study materials and get instant, personalized explanations
           </p>
         </div>
+
+        {/* Chat Limit Alert for Free Users */}
+        {chatLimitInfo && !chatLimitInfo.isPro && (
+          <Alert className="mb-6 max-w-7xl mx-auto border-2 border-amber-200 dark:border-amber-800 bg-gradient-to-r from-amber-50 to-orange-50 dark:from-amber-950/20 dark:to-orange-950/20">
+            <AlertCircle className="h-4 w-4 text-amber-600 dark:text-amber-400" />
+            <AlertTitle className="text-amber-900 dark:text-amber-100">
+              {limitReached ? "Chat Limit Reached" : `${chatLimitInfo.remainingChats} Chats Remaining`}
+            </AlertTitle>
+            <AlertDescription className="text-amber-800 dark:text-amber-200">
+              {limitReached ? (
+                <>
+                  You've used all {chatLimitInfo.chatLimit} free chats. Upgrade to Pro for unlimited chats and access to all features!
+                </>
+              ) : (
+                <>
+                  You have {chatLimitInfo.remainingChats} of {chatLimitInfo.chatLimit} free chats remaining. Upgrade to Pro for unlimited chats!
+                </>
+              )}
+              <Button 
+                size="sm" 
+                onClick={handleUpgrade}
+                className="ml-4 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
+              >
+                <Crown className="w-4 h-4 mr-2" />
+                Upgrade to Pro
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* Chat Interface */}
@@ -691,19 +805,21 @@ export default function AIChatPage() {
                 <div className="flex gap-3">
                   <Input
                     placeholder={
-                      selectedDocuments.length === 0
+                      limitReached
+                        ? "Upgrade to Pro to continue chatting..."
+                        : selectedDocuments.length === 0
                         ? "Select projects and documents above to start chatting..."
                         : "Ask a question about your study materials..."
                     }
                     value={inputMessage}
                     onChange={(e) => setInputMessage(e.target.value)}
                     onKeyPress={handleKeyPress}
-                    disabled={isTyping || isExtracting}
+                    disabled={isTyping || isExtracting || limitReached}
                     className="flex-1 border-2 border-gray-200 dark:border-gray-700 rounded-xl px-4 py-3 text-base bg-white/90 dark:bg-gray-800/90 focus:border-blue-400 focus:ring-2 focus:ring-blue-200 dark:focus:ring-blue-800 transition-all duration-200"
                   />
                   <Button
                     onClick={handleSendMessage}
-                    disabled={!inputMessage.trim() || isTyping || isExtracting || selectedDocuments.length === 0}
+                    disabled={!inputMessage.trim() || isTyping || isExtracting || selectedDocuments.length === 0 || limitReached}
                     className="px-6 py-3 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white rounded-xl shadow-lg hover:shadow-xl transition-all duration-200 disabled:opacity-50"
                   >
                     {isTyping || isExtracting ? (
@@ -751,6 +867,7 @@ export default function AIChatPage() {
                         variant="outline"
                         className="w-full text-left h-auto p-4 bg-white/50 dark:bg-gray-800/50 hover:bg-gradient-to-r hover:from-blue-50 hover:to-purple-50 dark:hover:from-blue-950/30 dark:hover:to-purple-950/30 border-2 border-gray-200/60 dark:border-gray-700/60 rounded-xl transition-all duration-200 hover:shadow-lg hover:border-blue-300/60 dark:hover:border-blue-700/60"
                         onClick={() => handleSuggestedQuestion(item.question)}
+                        disabled={limitReached}
                       >
                         <div className="flex flex-col items-start gap-3 w-full min-w-0">
                           <span className="text-sm leading-relaxed break-words whitespace-normal text-left w-full font-medium">
@@ -827,6 +944,14 @@ export default function AIChatPage() {
                   <span className="text-yellow-500">•</span>
                   <span>Can answer beyond documents using general knowledge</span>
                 </div>
+                {chatLimitInfo && !chatLimitInfo.isPro && (
+                  <div className="flex items-start gap-2 pt-2 border-t">
+                    <span className="text-purple-500">•</span>
+                    <span className="font-medium">
+                      Upgrade to Pro for unlimited chats! <Crown className="inline w-3 h-3" />
+                    </span>
+                  </div>
+                )}
               </CardContent>
             </Card>
           </div>
