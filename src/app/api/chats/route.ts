@@ -8,6 +8,9 @@ import OpenAI from "openai"
 export const runtime = "nodejs"
 export const maxDuration = 60
 
+// Chat limits
+const FREE_CHAT_LIMIT = 5
+
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions)
@@ -44,6 +47,43 @@ export async function POST(request: NextRequest) {
     }
 
     const userProfile = userProfiles.docs[0]
+
+    // Get user data for plan checking
+    const users = await payload.find({
+      collection: "users",
+      where: { email: { equals: session.user.email } },
+      limit: 1,
+    })
+
+    if (!users.docs.length) {
+      return NextResponse.json({ error: "User not found" }, { status: 404 })
+    }
+
+    const user = users.docs[0]
+
+    // Check if user is Pro
+    const isPro = user.plan === "pro" && user.subscriptionStatus === "active"
+
+    // Check chat limit for free users
+    if (!isPro) {
+      const chatCount = user.chatCount || 0
+      
+      console.log(`📊 Free user chat check - Current count: ${chatCount}/${FREE_CHAT_LIMIT}`)
+      
+      if (chatCount >= FREE_CHAT_LIMIT) {
+        console.log(`❌ Chat limit reached for user: ${user.email}`)
+        return NextResponse.json(
+          {
+            error: "Chat limit reached",
+            message: `You've reached your limit of ${FREE_CHAT_LIMIT} free chats. Upgrade to Pro for unlimited chats!`,
+            limitReached: true,
+            remainingChats: 0,
+            chatLimit: FREE_CHAT_LIMIT,
+          },
+          { status: 403 }
+        )
+      }
+    }
 
     // Process documents with validation (similar to flashcard API)
     const validDocuments: Array<{
@@ -276,6 +316,19 @@ REMEMBER:
     console.log("✅ AI response generated")
     console.log("📊 Token usage:", completion.usage)
 
+    // Increment chat count for free users ONLY after successful response
+    if (!isPro) {
+      const newChatCount = (user.chatCount || 0) + 1
+      await payload.update({
+        collection: "users",
+        id: user.id,
+        data: {
+          chatCount: newChatCount,
+        },
+      })
+      console.log(`✅ Chat count incremented: ${newChatCount}/${FREE_CHAT_LIMIT}`)
+    }
+
     // Save AI response
     const aiMessage = await payload.create({
       collection: "chat_messages",
@@ -293,6 +346,9 @@ REMEMBER:
       },
     })
 
+    // Calculate remaining chats for free users
+    const remainingChats = isPro ? -1 : Math.max(0, FREE_CHAT_LIMIT - (user.chatCount || 0) - 1)
+
     const response = {
       message: {
         id: aiMessage.id,
@@ -306,6 +362,11 @@ REMEMBER:
         processedDocuments: validDocuments.length,
         failedDocuments: failedDocuments.length,
         ...(failedDocuments.length > 0 && { failedDetails: failedDocuments }),
+        // Add chat limit info for free users
+        ...(!isPro && {
+          remainingChats,
+          chatLimit: FREE_CHAT_LIMIT,
+        }),
       },
     }
 

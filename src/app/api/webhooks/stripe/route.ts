@@ -105,6 +105,17 @@ async function handleCheckoutSessionCompleted(
       billingPeriod
     })
 
+    // Validate required fields
+    if (!customerId) {
+      console.error("❌ No customer ID in session")
+      return
+    }
+
+    if (!subscriptionId) {
+      console.error("❌ No subscription ID in session")
+      return
+    }
+
     // Find user by customer ID (more reliable than email)
     const users = await payload.find({
       collection: "users",
@@ -143,17 +154,33 @@ async function handleCheckoutSessionCompleted(
       finalPlan
     })
 
-    // Convert timestamp to ISO string for Payload
-    const currentPeriodEndDate = new Date(subscription.current_period_end * 1000).toISOString()
-
-    // Prepare update data
-    const updateData = {
+    // Prepare base update data
+    const updateData: any = {
       stripeCustomerId: customerId,
       subscriptionId: subscriptionId,
       plan: finalPlan,
       subscriptionStatus: subscription.status,
       billingPeriod: billingPeriod,
-      currentPeriodEnd: currentPeriodEndDate, // Use ISO string
+    }
+
+    // Reset chat count when upgrading to Pro
+    if (finalPlan === "pro") {
+      updateData.chatCount = 0
+      console.log("🔄 Resetting chat count for Pro user")
+    }
+
+    // Handle current_period_end if it exists
+    if (subscription.current_period_end) {
+      try {
+        const currentPeriodEndDate = new Date(subscription.current_period_end * 1000).toISOString()
+        updateData.currentPeriodEnd = currentPeriodEndDate
+        console.log("📅 Converted date:", currentPeriodEndDate)
+      } catch (dateError) {
+        console.error("❌ Error converting date:", dateError)
+        console.log("⚠️ Will update without currentPeriodEnd field")
+      }
+    } else {
+      console.warn("⚠️ current_period_end is missing from subscription")
     }
 
     console.log("🔄 Updating user with data:", updateData)
@@ -268,7 +295,7 @@ async function handleSubscriptionDeleted(
     const user = users.docs[0]
     console.log("✅ Found user:", user.email)
 
-    // Downgrade user to free trial
+    // Downgrade user to free trial and reset chat count
     await payload.update({
       collection: "users",
       id: user.id,
@@ -277,10 +304,11 @@ async function handleSubscriptionDeleted(
         subscriptionStatus: "canceled",
         subscriptionId: null,
         billingPeriod: null,
+        chatCount: 0, // Reset chat count when downgrading
       },
     })
 
-    console.log("✅ User downgraded to free trial:", user.email)
+    console.log("✅ User downgraded to free trial with reset chat count:", user.email)
   } catch (error) {
     console.error("❌ Error handling subscription deletion:", error)
     throw error

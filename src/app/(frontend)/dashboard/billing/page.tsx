@@ -22,6 +22,8 @@ interface UserData {
     quizzesTaken: number
     examSimulationsTaken: number
     projectsCreated: number
+    chatsUsed?: number
+    remainingChats?: number
   }
 }
 
@@ -46,13 +48,14 @@ export default function BillingPageRoute() {
         const subscriptionData = await subscriptionResponse.json()
 
         // Fetch all usage data in parallel for better performance
-        const [projectsData, documentsData, flashcardsData, quizzesData, examsData, profileData] = await Promise.all([
+        const [projectsData, documentsData, flashcardsData, quizzesData, examsData, profileData, chatLimitData] = await Promise.all([
           fetch(`/api/projects`).then(res => res.json()),
           fetch(`/api/documents`).then(res => res.json()),
           fetch(`/api/flashcards`).then(res => res.json()),
           fetch(`/api/quizzes`).then(res => res.json()),
           fetch(`/api/exam`).then(res => res.json()),
           fetch(`/api/profile`).then(res => res.json()),
+          fetch(`/api/chats/limit`).then(res => res.json()),
         ])
 
         // Extract counts
@@ -61,6 +64,8 @@ export default function BillingPageRoute() {
         const flashcardCount = flashcardsData.success ? flashcardsData.flashcards.length : 0
         const quizCount = quizzesData.success ? quizzesData.totalQuizzes : 0
         const examCount = examsData.success ? examsData.totalExams : 0
+        const chatCount = chatLimitData.success ? chatLimitData.chatCount : 0
+        const remainingChats = chatLimitData.success ? chatLimitData.remainingChats : 0
 
         // Combine all data
         const userData: UserData = {
@@ -76,8 +81,10 @@ export default function BillingPageRoute() {
             documentsUploaded: documentCount,
             flashcardsGenerated: flashcardCount,
             quizzesTaken: quizCount,
-            examSimulationsTaken: examCount, // ✅ Now using actual count from database
+            examSimulationsTaken: examCount,
             projectsCreated: projectCount,
+            chatsUsed: chatCount,
+            remainingChats: remainingChats,
           },
         }
 
